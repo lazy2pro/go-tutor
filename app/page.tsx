@@ -32,7 +32,21 @@ export default function Home() {
     return sgf;
   };
 
-  // 사용자 착수 ➔ 분석 및 AI 응수 자동 실행
+  // 빈 교차점 랜덤 찾기 (Fallback 전용)
+  const getRandomEmptyCell = (currentBoard: (string | null)[][]) => {
+    const emptyCells: { x: number; y: number }[] = [];
+    for (let y = 0; y < BOARD_SIZE; y++) {
+      for (let x = 0; x < BOARD_SIZE; x++) {
+        if (currentBoard[y][x] === null) {
+          emptyCells.push({ x, y });
+        }
+      }
+    }
+    if (emptyCells.length === 0) return null;
+    return emptyCells[Math.floor(Math.random() * emptyCells.length)];
+  };
+
+  // 사용자 착수 ➔ 분석 및 AI 응수
   const handleBoardClick = async (event: React.MouseEvent<SVGSVGElement>) => {
     if (isAiThinking) return;
 
@@ -60,14 +74,19 @@ export default function Home() {
 
     // 2. AI 분석 및 다음 수 요청
     setIsAiThinking(true);
-    const coordStr = `${String.fromCharCode(65 + (x >= 8 ? x + 1 : x))}${19 - y}`;
+    const colName = String.fromCharCode(65 + (x >= 8 ? x + 1 : x)); // I열 제외 바둑 표준 좌표
+    const coordStr = `${colName}${19 - y}`;
 
     try {
       const prompt = `
 사용자가 ${userColor === 'B' ? '흑' : '백'}으로 [${coordStr}] 자리에 두었습니다. (선택된 AI 난이도: ${level})
 
-1. [사용자 수 분석]: 방금 사용자가 둔 수의 장점, 실수 여부, 원리를 ${level} 눈높이에 맞춰 친절히 해설해 주세요.
-2. [AI 대국 응수]: 당신은 ${userColor === 'B' ? '백' : '흑'} 대국 상대입니다. ${level} 수준에 맞는 당신의 다음 착수 위치를 바둑판 좌표(예: K10, D4, R14 등) 형식으로 문장 제일 마지막 줄에 'NEXT_MOVE: [좌표]' 형태로 명시해 주세요. (이미 돌이 있는 곳 제외)
+다음 지침을 엄격히 따라 작성해 주세요:
+1. [사용자 수 분석]: 방금 사용자가 둔 수의 이점과 목적을 ${level} 눈높이에 맞춰 친절히 설명해 주세요.
+2. [AI 대국 응수]: 당신은 ${userColor === 'B' ? '백' : '흑'} 대국 상대입니다. ${level} 수준에 맞춰 당신이 다음에 둘 착수 위치를 정하세요.
+
+★ 중요: 답변의 맨 마지막 줄에 반드시오직 다음 형식으로만 AI의 착수 좌표를 추가해 주세요 (예: NEXT_MOVE: K10)
+NEXT_MOVE: [좌표]
 `;
 
       const res = await fetch('/api/go-explain', {
@@ -85,25 +104,49 @@ export default function Home() {
         const text = data.result || '';
         setAiExplanation(text);
 
-        // 3. AI 응수 좌표 파싱 및 착수
-        const match = text.match(/NEXT_MOVE:\s*([A-HJ-T])(1[0-9]|[1-9])/i);
+        // 3. 유연한 좌표 파싱 (NEXT_MOVE: X10 형태)
+        let aiX: number | null = null;
+        let aiY: number | null = null;
+
+        const match = text.match(/NEXT_MOVE\s*:\s*([A-T])\s*(1[0-9]|[1-9])/i);
+
         if (match) {
           const colChar = match[1].toUpperCase();
           const rowNum = parseInt(match[2], 10);
 
-          let aiX = colChar.charCodeAt(0) - 65;
-          if (aiX > 8) aiX -= 1; // 'I' 좌표 제외 처리
-          const aiY = 19 - rowNum;
+          // 좌표 계산
+          let code = colChar.charCodeAt(0) - 65;
+          if (code > 8) code -= 1; // 'I'열 오프셋 처리
 
-          if (aiX >= 0 && aiX < 19 && aiY >= 0 && aiY < 19 && newBoard[aiY][aiX] === null) {
-            const aiColor = userColor === 'B' ? 'W' : 'B';
-            setTimeout(() => {
-              const aiBoard = newBoard.map((r) => [...r]);
-              aiBoard[aiY][aiX] = aiColor;
-              setBoard(aiBoard);
-              setHistory([...updatedHistory, { x: aiX, y: aiY, color: aiColor }]);
-            }, 600);
+          const calcY = 19 - rowNum;
+
+          if (code >= 0 && code < 19 && calcY >= 0 && calcY < 19 && newBoard[calcY][code] === null) {
+            aiX = code;
+            aiY = calcY;
           }
+        }
+
+        // 파싱 실패 시 빈 교차점 자동 탐색 (Fallback)
+        if (aiX === null || aiY === null) {
+          const fallback = getRandomEmptyCell(newBoard);
+          if (fallback) {
+            aiX = fallback.x;
+            aiY = fallback.y;
+          }
+        }
+
+        // AI 돌 착수 실행
+        if (aiX !== null && aiY !== null) {
+          const targetX = aiX;
+          const targetY = aiY;
+          const aiColor = userColor === 'B' ? 'W' : 'B';
+
+          setTimeout(() => {
+            const aiBoard = newBoard.map((r) => [...r]);
+            aiBoard[targetY][targetX] = aiColor;
+            setBoard(aiBoard);
+            setHistory([...updatedHistory, { x: targetX, y: targetY, color: aiColor }]);
+          }, 400);
         }
       }
     } catch (err) {

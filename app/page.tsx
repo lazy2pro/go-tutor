@@ -187,7 +187,7 @@ export default function Home() {
     const colName = String.fromCharCode(65 + (x >= 8 ? x + 1 : x));
     const coordStr = `${colName}${boardSize - y}`;
 
-    // 튜터링 전용 정교한 프롬프트 구성
+    // 튜터링 전용 프롬프트 구성
     const prompt = `
 당신은 세계 최고 수준의 바둑 AI 튜터입니다. (바둑판 규격: ${boardSize}x${boardSize}, 학습자 수준: ${level})
 사용자가 방금 [${coordStr}] 위치에 ${userColor === 'B' ? '흑' : '백'}으로 두었습니다.
@@ -378,10 +378,10 @@ export default function Home() {
         {/* 튜터 분석 코칭 창 */}
         <div style={{ flex: '1', minWidth: '320px' }}>
           <div style={{ border: '1px solid #cbd5e1', padding: '18px', borderRadius: '8px', backgroundColor: '#ffffff', minHeight: '320px', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
-            <h3 style={{ marginTop: 0, color: '#0f172a', borderBottom: '2px solid #e2e8f0', pb: '8px' }}>🤖 AI 튜터 실시간 강평 및 분석</h3>
+            <h3 style={{ marginTop: 0, color: '#0f172a', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px' }}>🤖 AI 튜터 실시간 강평 및 분석</h3>
             {!gameStarted ? (
               <p style={{ color: '#64748b', fontSize: '14px', marginTop: '20px' }}>
-                상격 패널에서 바둑판 규격(9x9, 13x13, 19x19)과 난이도를 지정한 뒤 <strong>[대국 시작하기]</strong> 버튼을 클릭하세요.
+                상단 패널에서 바둑판 규격(9x9, 13x13, 19x19)과 난이도를 지정한 뒤 <strong>[대국 시작하기]</strong> 버튼을 클릭하세요.
               </p>
             ) : isAiThinking ? (
               <p style={{ color: '#d97706', fontWeight: 'bold', marginTop: '20px' }}>

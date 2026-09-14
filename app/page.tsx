@@ -38,7 +38,7 @@ export default function Home() {
     return [];
   };
 
-  // --- 국제 표준 바둑 룰 엔진 ---
+  // --- 바둑 룰 엔진 ---
   const getGroupAndLiberties = (grid: Stone[][], startX: number, startY: number) => {
     const color = grid[startY][startX];
     if (!color) return { group: [], liberties: 0 };
@@ -108,7 +108,7 @@ export default function Home() {
 
     const { liberties: myLiberties } = getGroupAndLiberties(nextBoard, x, y);
     if (myLiberties === 0 && capturedCount === 0) {
-      return null; // 금수수
+      return null;
     }
 
     return { newBoard: nextBoard, capturedCount };
@@ -146,7 +146,7 @@ export default function Home() {
     setHistory([]);
     setCapturedB(0);
     setCapturedW(0);
-    setAiExplanation('대국이 시작되었습니다. 바둑판에 착수하면 AI 튜터의 실시간 4단계 분석 강평이 출력됩니다.');
+    setAiExplanation('대국이 시작되었습니다. 바둑판에 착수하면 AI 튜터의 4단계 강평이 표시됩니다.');
     setGameStarted(true);
   };
 
@@ -190,7 +190,7 @@ export default function Home() {
             }
           }
         } else {
-          setAiExplanation(`API 오류: ${data.error || 'Gemini 응답 실패'}\n(규칙 엔진에 의해 착수를 계속합니다.)`);
+          setAiExplanation(`API 인증/오류 발생: ${data.error || '연결 실패'}\n(Vercel GEMINI_API_KEY 확인 필요)`);
         }
 
         if (targetX === null || targetY === null) {
@@ -211,12 +211,9 @@ export default function Home() {
 
             setHistory([...currentHistory, { x: targetX, y: targetY, color: aiColor }]);
           }
-        } else {
-          setAiExplanation('더 이상 둘 수 있는 유효한 위치가 없습니다. 대국이 종료되었습니다.');
         }
       } catch (err: any) {
         console.error(err);
-        setAiExplanation('통신 에러가 발생하여 규칙 엔진으로 착수를 대진했습니다.');
       } finally {
         setIsAiThinking(false);
       }
@@ -265,7 +262,7 @@ export default function Home() {
 
     const prompt = `
 사용자가 방금 [${coordStr}] 위치에 ${userColor === 'B' ? '흑' : '백'}으로 착수했습니다.
-4가지 강평 항목(착수 평가, 형세 판단, 추천 맥점, AI 응수 이유)을 완성해 주세요.
+4가지 강평 항목(착수 평가, 형세 판단, 추천 맥점, AI 응수 이유)을 작성해 주세요.
 `;
 
     triggerAiMove(moveRes.newBoard, updatedHistory, prompt);
@@ -286,7 +283,7 @@ export default function Home() {
         }),
       });
       if (res.ok) {
-        alert('대국 기록과 튜터 강평 저장이 완료되었습니다!');
+        alert('대국 기보와 튜터 강평 저장이 완료되었습니다!');
         fetchGames();
       }
     } catch (err) {

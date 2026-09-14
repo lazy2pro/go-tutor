@@ -2,45 +2,125 @@
 
 import { useState, useEffect } from 'react';
 
-interface Game {
-  id: string;
-  title: string;
-  sgf: string;
-  player_black: string;
-  player_white: string;
-  user_level: string;
-  ai_summary: string;
-  created_at: string;
-}
+const BOARD_SIZE = 19;
+
+// 바둑판 좌표 생성
+const boardIndices = Array.from({ length: BOARD_SIZE }, (_, i) => i);
 
 export default function Home() {
+  // 19x19 판 상태 (null: 빈칸, 'B': 흑, 'W': 백)
+  const [board, setBoard] = useState<(string | null)[][]>(
+    Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null))
+  );
+  const [turn, setTurn] = useState<'B' | 'W'>('B');
+  const [history, setHistory] = useState<{ x: number; y: number; color: 'B' | 'W' }[]>([]);
+  
   const [title, setTitle] = useState('');
-  const [sgf, setSgf] = useState('');
-  const [playerBlack, setPlayerBlack] = useState('');
-  const [playerWhite, setPlayerWhite] = useState('');
   const [level, setLevel] = useState('중급자');
-  const [question, setQuestion] = useState('');
-
   const [aiExplanation, setAiExplanation] = useState('');
   const [loadingAi, setLoadingAi] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [games, setGames] = useState<any[]>([]);
 
-  const [games, setGames] = useState<Game[]>([]);
-  const [loadingGames, setLoadingGames] = useState(true);
+  // 히스토리를 SGF 포맷으로 변환
+  const generateSgf = () => {
+    let sgf = `(;GM[1]FF[4]SZ[19]KM[6.5]RU[Japanese]`;
+    history.forEach((step) => {
+      const col = String.fromCharCode(97 + step.x);
+      const row = String.fromCharCode(97 + step.y);
+      sgf += `;${step.color}[${col}${row}]`;
+    });
+    sgf += `)`;
+    return sgf;
+  };
 
-  // 저장된 기보 목록 가져오기
+  // 착수 처리 및 실시간 AI 튜터링 호출
+  const handleCellClick = async (x: number, y: number) => {
+    if (board[y][x] !== null || loadingAi) return;
+
+    // 판 업데이트
+    const newBoard = board.map((row) => [...row]);
+    newBoard[y][x] = turn;
+    setBoard(newBoard);
+
+    const newStep = { x, y, color: turn };
+    const newHistory = [...history, newStep];
+    setHistory(newHistory);
+
+    const nextTurn = turn === 'B' ? 'W' : 'B';
+    setTurn(nextTurn);
+
+    // 실시간 Gemini AI 분석 호출
+    setLoadingAi(true);
+    const coordStr = `${String.fromCharCode(65 + x)}${19 - y}`;
+    const sgfData = generateSgf();
+
+    try {
+      const res = await fetch('/api/go-explain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sgf: sgfData,
+          level,
+          userQuestion: `사용자가 방금 ${turn === 'B' ? '흑' : '백'}으로 [${coordStr}] 자리에 두었습니다. 이 수의 의도, 이점 또는 더 좋은 추천 착수 지점이 있는지 실시간으로 해설해 주세요.`,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAiExplanation(data.result);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingAi(false);
+    }
+  };
+
+  // 판 초기화 (새 대국)
+  const handleReset = () => {
+    setBoard(Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null)));
+    setHistory([]);
+    setTurn('B');
+    setAiExplanation('');
+  };
+
+  // DB에 대국 저장
+  const handleSaveGame = async () => {
+    if (history.length === 0) {
+      alert('최소 1수 이상 둔 후 저장해 주세요.');
+      return;
+    }
+    const saveTitle = title || `실시간 대국 (${new Date().toLocaleDateString()})`;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/games', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: saveTitle,
+          sgf: generateSgf(),
+          user_level: level,
+          ai_summary: aiExplanation,
+        }),
+      });
+      if (res.ok) {
+        alert('대국 기보가 저장되었습니다!');
+        fetchGames();
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const fetchGames = async () => {
-    setLoadingGames(true);
     try {
       const res = await fetch('/api/games');
       const data = await res.json();
-      if (res.ok) {
-        setGames(data.games || []);
-      }
+      if (res.ok) setGames(data.games || []);
     } catch (err) {
-      console.error('기보 목록 로딩 실패:', err);
-    } finally {
-      setLoadingGames(false);
+      console.error(err);
     }
   };
 
@@ -48,216 +128,143 @@ export default function Home() {
     fetchGames();
   }, []);
 
-  // AI 해설 요청
-  const handleAskAi = async () => {
-    if (!sgf) {
-      alert('SGF 기보를 입력해 주세요.');
-      return;
-    }
-    setLoadingAi(true);
-    setAiExplanation('');
-    try {
-      const res = await fetch('/api/go-explain', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sgf, userQuestion: question, level }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setAiExplanation(data.result);
-      } else {
-        alert(data.error || 'AI 해설 생성 실패');
-      }
-    } catch (err) {
-      console.error(err);
-      alert('오류가 발생했습니다.');
-    } finally {
-      setLoadingAi(false);
-    }
-  };
-
-  // DB에 기보 저장
-  const handleSaveGame = async () => {
-    if (!title || !sgf) {
-      alert('제목과 SGF 기보는 필수 입력 항목입니다.');
-      return;
-    }
-    setSaving(true);
-    try {
-      const res = await fetch('/api/games', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title,
-          sgf,
-          player_black: playerBlack,
-          player_white: playerWhite,
-          user_level: level,
-          ai_summary: aiExplanation,
-        }),
-      });
-      if (res.ok) {
-        alert('기보가 성공적으로 저장되었습니다!');
-        fetchGames(); // 목록 갱신
-      } else {
-        const data = await res.json();
-        alert(data.error || '저장 실패');
-      }
-    } catch (err) {
-      console.error(err);
-      alert('저장 중 오류 발생');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
     <main className="min-h-screen bg-slate-900 text-slate-100 p-6 font-sans">
-      <div className="max-w-5xl mx-auto space-y-8">
-        <header className="border-b border-slate-700 pb-4">
-          <h1 className="text-3xl font-bold text-amber-400">AI 바둑 튜터 (Go Tutor)</h1>
-          <p className="text-slate-400 text-sm mt-1">
-            기보를 입력하고 Gemini Pro AI의 맞춤형 코칭 및 사활/복기 해설을 받아보세요.
-          </p>
+      <div className="max-w-6xl mx-auto space-y-6">
+        <header className="flex justify-between items-center border-b border-slate-700 pb-4">
+          <div>
+            <h1 className="text-3xl font-bold text-amber-400">실시간 AI 바둑 튜터</h1>
+            <p className="text-slate-400 text-sm mt-1">
+              바둑판에 돌을 놓으면 Gemini Pro가 착수마다 실시간 코칭을 해드립니다.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleReset}
+              className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-sm transition"
+            >
+              새 대국 시작
+            </button>
+            <button
+              onClick={handleSaveGame}
+              disabled={saving}
+              className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded text-sm transition disabled:opacity-50"
+            >
+              {saving ? '저장 중...' : '기보 저장'}
+            </button>
+          </div>
         </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* 왼쪽: 기보 입력 및 AI 요청 폼 */}
-          <section className="bg-slate-800 p-6 rounded-xl border border-slate-700 space-y-4 shadow-lg">
-            <h2 className="text-xl font-semibold text-amber-300">1. 기보 및 질문 입력</h2>
-            
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">기보 제목 *</label>
-              <input
-                type="text"
-                placeholder="예: 2026-09-14 인공지능 복기 대국"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-amber-400"
-              />
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* 인터랙티브 바둑판 영역 (Left) */}
+          <section className="lg:col-span-7 flex flex-col items-center bg-amber-100/10 p-6 rounded-xl border border-slate-700 shadow-xl">
+            <div className="mb-4 flex justify-between w-full max-w-[500px] text-sm font-semibold">
+              <span className="text-amber-300">현재 차례: {turn === 'B' ? '⚫ 흑' : '⚪ 백'}</span>
+              <span className="text-slate-400">총 수순: {history.length}수</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">흑 대국자</label>
-                <input
-                  type="text"
-                  placeholder="흑 플레이어"
-                  value={playerBlack}
-                  onChange={(e) => setPlayerBlack(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-amber-400"
-                />
+            {/* 19x19 바둑판 */}
+            <div className="relative bg-[#e3ac57] p-4 rounded shadow-2xl border-4 border-[#b88230]">
+              <div className="grid grid-cols-19 gap-0 border border-slate-800 bg-[#e3ac57]">
+                {boardIndices.map((y) => (
+                  <div key={y} className="flex">
+                    {boardIndices.map((x) => {
+                      const cell = board[y][x];
+                      const isLastMove =
+                        history.length > 0 &&
+                        history[history.length - 1].x === x &&
+                        history[history.length - 1].y === y;
+
+                      return (
+                        <button
+                          key={x}
+                          onClick={() => handleCellClick(x, y)}
+                          className="w-7 h-7 sm:w-8 sm:h-8 relative flex items-center justify-center hover:bg-black/10 focus:outline-none"
+                        >
+                          {/* 격자선 */}
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="w-full h-[1px] bg-slate-900/60"></div>
+                            <div className="h-full w-[1px] bg-slate-900/60 absolute"></div>
+                          </div>
+
+                          {/* 화점 (Star points) */}
+                          {[3, 9, 15].includes(x) && [3, 9, 15].includes(y) && (
+                            <div className="w-1.5 h-1.5 bg-slate-900 rounded-full z-0 pointer-events-none"></div>
+                          )}
+
+                          {/* 바둑돌 */}
+                          {cell && (
+                            <div
+                              className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full z-10 shadow-md flex items-center justify-center ${
+                                cell === 'B'
+                                  ? 'bg-gradient-to-br from-slate-700 to-black border border-slate-800'
+                                  : 'bg-gradient-to-br from-white to-slate-200 border border-slate-400'
+                              }`}
+                            >
+                              {isLastMove && (
+                                <div
+                                  className={`w-2 h-2 rounded-full ${
+                                    cell === 'B' ? 'bg-red-500' : 'bg-red-600'
+                                  }`}
+                                />
+                              )}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">백 대국자</label>
-                <input
-                  type="text"
-                  placeholder="백 플레이어"
-                  value={playerWhite}
-                  onChange={(e) => setPlayerWhite(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-amber-400"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">사용자 실력 레벨</label>
-              <select
-                value={level}
-                onChange={(e) => setLevel(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-amber-400"
-              >
-                <option value="입문자">입문자 (기초 규칙/기본 사활)</option>
-                <option value="초급자">초급자 (행마 및 기초 전투)</option>
-                <option value="중급자">중급자 (포석 및 실전 응용)</option>
-                <option value="고급자">고급자 (심화 복기 및 수읽기)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">SGF 기보 데이터 *</label>
-              <textarea
-                rows={5}
-                placeholder="(;GM[1]FF[4]SZ[19]KM[6.5];B[pd];W[dp]...)"
-                value={sgf}
-                onChange={(e) => setSgf(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs font-mono focus:outline-none focus:border-amber-400 resize-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">AI 튜터에게 할 질문</label>
-              <input
-                type="text"
-                placeholder="예: 초반 우상귀 포석 선택이 맞았는지 설명해주세요."
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-amber-400"
-              />
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={handleAskAi}
-                disabled={loadingAi}
-                className="flex-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2 rounded text-sm transition disabled:opacity-50"
-              >
-                {loadingAi ? 'AI 해설 분석 중...' : 'AI 튜터 해설 요청'}
-              </button>
-              <button
-                onClick={handleSaveGame}
-                disabled={saving}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2 rounded text-sm transition disabled:opacity-50"
-              >
-                {saving ? '저장 중...' : '기보 저장'}
-              </button>
             </div>
           </section>
 
-          {/* 오른쪽: AI 해설 결과 및 저장된 기보 목록 */}
-          <section className="space-y-6">
-            {/* AI 해설 카드 */}
-            <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg min-h-[220px]">
-              <h2 className="text-xl font-semibold text-amber-300 mb-3">2. AI 튜터 코칭 해설</h2>
-              {aiExplanation ? (
-                <div className="bg-slate-900 p-4 rounded text-sm text-slate-200 whitespace-pre-wrap leading-relaxed border border-slate-700 max-h-[300px] overflow-y-auto">
+          {/* AI 실시간 코칭 & 보관함 (Right) */}
+          <section className="lg:col-span-5 space-y-6">
+            <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg min-h-[300px]">
+              <div className="flex justify-between items-center mb-3">
+                <h2 className="text-xl font-semibold text-amber-300">🤖 Gemini 실시간 튜터</h2>
+                <select
+                  value={level}
+                  onChange={(e) => setLevel(e.target.value)}
+                  className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-amber-300"
+                >
+                  <option value="입문자">입문자</option>
+                  <option value="초급자">초급자</option>
+                  <option value="중급자">중급자</option>
+                  <option value="고급자">고급자</option>
+                </select>
+              </div>
+
+              {loadingAi ? (
+                <div className="flex items-center justify-center h-40 text-amber-400 text-sm animate-pulse">
+                  Gemini가 수순을 분석 중입니다...
+                </div>
+              ) : aiExplanation ? (
+                <div className="bg-slate-900 p-4 rounded text-sm text-slate-200 whitespace-pre-wrap leading-relaxed border border-slate-700 max-h-[350px] overflow-y-auto">
                   {aiExplanation}
                 </div>
               ) : (
                 <p className="text-slate-500 text-sm">
-                  좌측 폼에서 SGF 기보를 입력한 후 'AI 튜터 해설 요청' 버튼을 누르면 이곳에 분석 결과가 표시됩니다.
+                  좌측 바둑판에 돌을 놓아보세요. 놓는 즉시 Gemini AI가 수순 분석 및 코칭을 시작합니다.
                 </p>
               )}
             </div>
 
-            {/* 저장된 기보 목록 */}
+            {/* 기보 보관함 */}
             <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
-              <h2 className="text-xl font-semibold text-amber-300 mb-3">3. 내 기보 보관함</h2>
-              {loadingGames ? (
-                <p className="text-slate-400 text-sm">기보 불러오는 중...</p>
-              ) : games.length === 0 ? (
+              <h2 className="text-lg font-semibold text-amber-300 mb-3">📁 저장된 대국 목록</h2>
+              {games.length === 0 ? (
                 <p className="text-slate-500 text-sm">저장된 기보가 없습니다.</p>
               ) : (
-                <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+                <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
                   {games.map((game) => (
                     <div
                       key={game.id}
-                      onClick={() => {
-                        setTitle(game.title);
-                        setSgf(game.sgf);
-                        setPlayerBlack(game.player_black || '');
-                        setPlayerWhite(game.player_white || '');
-                        if (game.ai_summary) setAiExplanation(game.ai_summary);
-                      }}
-                      className="p-3 bg-slate-900 hover:bg-slate-700/50 rounded border border-slate-700/60 cursor-pointer transition flex justify-between items-center"
+                      className="p-2.5 bg-slate-900 hover:bg-slate-700/50 rounded border border-slate-700/60 text-xs flex justify-between items-center"
                     >
-                      <div>
-                        <div className="font-semibold text-amber-400 text-sm">{game.title}</div>
-                        <div className="text-xs text-slate-400">
-                          {game.player_black || '흑'} vs {game.player_white || '백'} ({game.user_level})
-                        </div>
-                      </div>
-                      <span className="text-[10px] text-slate-500">
+                      <span className="font-semibold text-amber-400">{game.title}</span>
+                      <span className="text-slate-500">
                         {new Date(game.created_at).toLocaleDateString()}
                       </span>
                     </div>

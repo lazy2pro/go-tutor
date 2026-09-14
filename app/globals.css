@@ -1,3 +1,9 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+* { box-sizing: border-box; }
+html { color-scheme: light; }
+body { margin: 0; background: #f8fafc; }
+button, select { font: inherit; }
+button:disabled { cursor: wait !important; opacity: .65; }

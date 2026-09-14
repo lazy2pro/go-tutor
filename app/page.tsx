@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 const PADDING = 24;
 const BOARD_PIXEL_MAX = 520;
@@ -10,6 +10,12 @@ type Stone = 'B' | 'W' | null;
 interface Point {
   x: number;
   y: number;
+}
+
+interface SavedGame {
+  id: string;
+  title: string;
+  created_at: string;
 }
 
 export default function Home() {
@@ -26,7 +32,8 @@ export default function Home() {
   const [aiExplanation, setAiExplanation] = useState<string>('');
   const [isAiThinking, setIsAiThinking] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
-  const [games, setGames] = useState<any[]>([]);
+  const [games, setGames] = useState<SavedGame[]>([]);
+  const aiRequestRef = useRef<AbortController | null>(null);
 
   const cellSize = Math.floor((BOARD_PIXEL_MAX - PADDING * 2) / (boardSize - 1));
   const boardPixelSize = (boardSize - 1) * cellSize + PADDING * 2;
@@ -39,7 +46,7 @@ export default function Home() {
   };
 
   // --- 바둑 룰 엔진 ---
-  const getGroupAndLiberties = (grid: Stone[][], startX: number, startY: number) => {
+  const getGroupAndLiberties = useCallback((grid: Stone[][], startX: number, startY: number) => {
     const color = grid[startY][startX];
     if (!color) return { group: [], liberties: 0 };
 
@@ -50,8 +57,8 @@ export default function Home() {
 
     visited.add(`${startX},${startY}`);
 
-    while (queue.length > 0) {
-      const { x, y } = queue.shift()!;
+    for (let queueIndex = 0; queueIndex < queue.length; queueIndex++) {
+      const { x, y } = queue[queueIndex];
       group.push({ x, y });
 
       const neighbors = [
@@ -74,9 +81,9 @@ export default function Home() {
     }
 
     return { group, liberties: libertiesSet.size };
-  };
+  }, [boardSize]);
 
-  const playMove = (currentBoard: Stone[][], x: number, y: number, color: 'B' | 'W') => {
+  const playMove = useCallback((currentBoard: Stone[][], x: number, y: number, color: 'B' | 'W') => {
     if (currentBoard[y][x] !== null) return null;
 
     const nextBoard = currentBoard.map((row) => [...row]);
@@ -112,9 +119,9 @@ export default function Home() {
     }
 
     return { newBoard: nextBoard, capturedCount };
-  };
+  }, [boardSize, getGroupAndLiberties]);
 
-  const getValidEmptyCells = (currentBoard: Stone[][], color: 'B' | 'W') => {
+  const getValidEmptyCells = useCallback((currentBoard: Stone[][], color: 'B' | 'W') => {
     const valids: Point[] = [];
     for (let y = 0; y < boardSize; y++) {
       for (let x = 0; x < boardSize; x++) {
@@ -125,9 +132,9 @@ export default function Home() {
       }
     }
     return valids;
-  };
+  }, [boardSize, playMove]);
 
-  const generateSgf = (hist = history) => {
+  const generateSgf = useCallback((hist = history) => {
     let sgf = `(;GM[1]FF[4]SZ[${boardSize}]KM[6.5]RU[Japanese]`;
     hist.forEach((step) => {
       const col = String.fromCharCode(97 + step.x);
@@ -136,9 +143,10 @@ export default function Home() {
     });
     sgf += `)`;
     return sgf;
-  };
+  }, [boardSize, history]);
 
   const handleStartGame = () => {
+    aiRequestRef.current?.abort();
     const newBoard: Stone[][] = Array(boardSize)
       .fill(null)
       .map(() => Array(boardSize).fill(null));
@@ -154,11 +162,15 @@ export default function Home() {
     async (currentBoard: Stone[][], currentHistory: typeof history, promptText: string) => {
       setIsAiThinking(true);
       const aiColor = userColor === 'B' ? 'W' : 'B';
+      aiRequestRef.current?.abort();
+      const controller = new AbortController();
+      aiRequestRef.current = controller;
 
       try {
         const res = await fetch('/api/go-explain', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({
             sgf: generateSgf(currentHistory),
             level,
@@ -212,21 +224,30 @@ export default function Home() {
             setHistory([...currentHistory, { x: targetX, y: targetY, color: aiColor }]);
           }
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
         console.error(err);
+        setAiExplanation('AI 튜터 연결에 실패했습니다. 잠시 후 다시 착수해 주세요.');
       } finally {
-        setIsAiThinking(false);
+        if (aiRequestRef.current === controller) {
+          aiRequestRef.current = null;
+          setIsAiThinking(false);
+        }
       }
     },
-    [userColor, level, boardSize]
+    [userColor, level, boardSize, generateSgf, getValidEmptyCells, playMove]
   );
 
   useEffect(() => {
     if (gameStarted && userColor === 'W' && history.length === 0 && !isAiThinking) {
       const prompt = `당신은 ${boardSize}x${boardSize} 바둑판의 흑(선공) 대국자이자 AI 튜터입니다. 첫 착수 후 포석 이유를 설명해 주세요. 마지막 줄에 "NEXT_MOVE: [좌표]"를 출력하세요.`;
-      triggerAiMove(board, history, prompt);
+      // 백을 선택한 경우 대국 시작 상태와 동기화해 AI의 첫 수를 요청한다.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      void triggerAiMove(board, history, prompt);
     }
   }, [gameStarted, userColor, history, isAiThinking, board, boardSize, triggerAiMove]);
+
+  useEffect(() => () => aiRequestRef.current?.abort(), []);
 
   const handleBoardClick = async (event: React.MouseEvent<SVGSVGElement>) => {
     if (!gameStarted || isAiThinking) return;
@@ -282,9 +303,12 @@ export default function Home() {
           ai_summary: aiExplanation,
         }),
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         alert('대국 기보와 튜터 강평 저장이 완료되었습니다!');
         fetchGames();
+      } else {
+        alert(`저장 실패: ${data.error || '서버 오류'}`);
       }
     } catch (err) {
       console.error(err);
@@ -312,8 +336,8 @@ export default function Home() {
 
   return (
     <div style={{ padding: '20px', fontFamily: 'sans-serif', maxWidth: '1150px', margin: '0 auto' }}>
-      <h1>🎓 AI 바둑 튜터 대국실 (국제 표준 룰 적용)</h1>
-      <p style={{ color: '#666' }}>원하는 규격과 실력 레벨을 선택하고 바둑을 두면 프로기사 수준의 실시간 튜터링이 제공됩니다.</p>
+      <h1>🎓 AI 바둑 튜터 대국실</h1>
+      <p style={{ color: '#666' }}>원하는 규격과 실력 레벨을 선택하고 바둑을 두면 AI 기반 실시간 튜터링이 제공됩니다.</p>
 
       {/* 컨트롤 패널 */}
       <div style={{ background: '#f0f4f8', padding: '16px', borderRadius: '10px', marginBottom: '20px' }}>
@@ -403,10 +427,11 @@ export default function Home() {
         {/* 바둑판 */}
         <div style={{ background: '#DC9D40', padding: '12px', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.25)', opacity: gameStarted ? 1 : 0.6 }}>
           <svg
-            width={boardPixelSize}
-            height={boardPixelSize}
+            viewBox={`0 0 ${boardPixelSize} ${boardPixelSize}`}
+            role="grid"
+            aria-label={`${boardSize} x ${boardSize} 바둑판`}
             onClick={handleBoardClick}
-            style={{ cursor: isUserTurn ? 'pointer' : 'not-allowed', display: 'block' }}
+            style={{ cursor: isUserTurn ? 'pointer' : 'not-allowed', display: 'block', width: 'min(100%, 520px)', height: 'auto', touchAction: 'manipulation' }}
           >
             {Array.from({ length: boardSize }).map((_, i) => (
               <g key={i}>

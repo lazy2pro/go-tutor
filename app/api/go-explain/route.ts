@@ -3,8 +3,15 @@ import { GoogleGenAI } from '@google/genai';
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: '올바른 JSON 요청이 필요합니다.' }, { status: 400 });
+    }
     const { sgf, level, userQuestion } = body;
+
+    if (typeof sgf !== 'string' || !sgf.startsWith('(;GM[1]') || sgf.length > 50_000) {
+      return NextResponse.json({ error: '유효한 SGF 기보가 필요합니다.' }, { status: 400 });
+    }
 
     const apiKey = process.env.GEMINI_API_KEY;
 
@@ -52,10 +59,10 @@ NEXT_MOVE: [좌표]
     const resultText = response.text || '튜터 강평을 생성하지 못했습니다.';
     return NextResponse.json({ result: resultText });
 
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Gemini API Error:', err);
     return NextResponse.json(
-      { error: err.message || 'AI 인증 또는 통신 중 오류가 발생했습니다.' },
+      { error: err instanceof Error ? err.message : 'AI 인증 또는 통신 중 오류가 발생했습니다.' },
       { status: 500 }
     );
   }

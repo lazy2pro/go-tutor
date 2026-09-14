@@ -11,56 +11,60 @@ type Point = { x: number; y: number };
 type Move = Point & { color: Color };
 type SavedGame = { id: string; title: string; created_at: string };
 
-function emptyBoard(size: number): Stone[][] {
-  return Array.from({ length: size }, () => Array<Stone>(size).fill(null));
-}
+const createBoard = (size: number): Stone[][] =>
+  Array.from({ length: size }, () => Array<Stone>(size).fill(null));
 
-function starPoints(size: number) {
+const getStarPoints = (size: number) => {
   if (size === 19) return [3, 9, 15];
   if (size === 13) return [3, 6, 9];
   return [2, 4, 6];
-}
+};
 
 export default function Home() {
   const [boardSize, setBoardSize] = useState(9);
   const [level, setLevel] = useState('입문자');
   const [userColor, setUserColor] = useState<Color>('B');
   const [started, setStarted] = useState(false);
+
   const [board, setBoard] = useState<Stone[][]>([]);
   const [history, setHistory] = useState<Move[]>([]);
   const [capturedBlack, setCapturedBlack] = useState(0);
   const [capturedWhite, setCapturedWhite] = useState(0);
-  const [thinking, setThinking] = useState(false);
-  const [saving, setSaving] = useState(false);
+
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [explanation, setExplanation] = useState('');
+  const [saving, setSaving] = useState(false);
   const [games, setGames] = useState<SavedGame[]>([]);
-  const abortRef = useRef<AbortController | null>(null);
+
+  const analysisAbortRef = useRef<AbortController | null>(null);
 
   const cellSize = Math.floor((BOARD_MAX - PADDING * 2) / (boardSize - 1));
   const boardPixels = (boardSize - 1) * cellSize + PADDING * 2;
   const turn: Color = history.length % 2 === 0 ? 'B' : 'W';
-  const userTurn = started && !thinking && turn === userColor;
+  const isUserTurn = started && turn === userColor;
 
-  const group = useCallback(
+  const getGroup = useCallback(
     (grid: Stone[][], startX: number, startY: number) => {
       const color = grid[startY]?.[startX];
       if (!color) return { stones: [] as Point[], liberties: 0 };
 
       const stones: Point[] = [];
       const queue: Point[] = [{ x: startX, y: startY }];
-      const seen = new Set([`${startX},${startY}`]);
+      const visited = new Set([`${startX},${startY}`]);
       const liberties = new Set<string>();
 
-      for (let i = 0; i < queue.length; i++) {
-        const { x, y } = queue[i];
+      for (let index = 0; index < queue.length; index++) {
+        const { x, y } = queue[index];
         stones.push({ x, y });
 
-        for (const next of [
+        const neighbors = [
           { x: x + 1, y },
           { x: x - 1, y },
           { x, y: y + 1 },
           { x, y: y - 1 },
-        ]) {
+        ];
+
+        for (const next of neighbors) {
           if (
             next.x < 0 ||
             next.y < 0 ||
@@ -74,8 +78,9 @@ export default function Home() {
           const key = `${next.x},${next.y}`;
 
           if (stone === null) liberties.add(key);
-          if (stone === color && !seen.has(key)) {
-            seen.add(key);
+
+          if (stone === color && !visited.has(key)) {
+            visited.add(key);
             queue.push(next);
           }
         }
@@ -87,79 +92,123 @@ export default function Home() {
   );
 
   const playMove = useCallback(
-    (current: Stone[][], x: number, y: number, color: Color) => {
-      if (!current[y] || current[y][x] !== null) return null;
+    (currentBoard: Stone[][], x: number, y: number, color: Color) => {
+      if (!currentBoard[y] || currentBoard[y][x] !== null) return null;
 
-      const next = current.map((row) => [...row]);
-      next[y][x] = color;
+      const nextBoard = currentBoard.map((row) => [...row]);
+      nextBoard[y][x] = color;
+
       const opponent: Color = color === 'B' ? 'W' : 'B';
       let captured = 0;
 
-      for (const near of [
+      const neighbors = [
         { x: x + 1, y },
         { x: x - 1, y },
         { x, y: y + 1 },
         { x, y: y - 1 },
-      ]) {
+      ];
+
+      for (const next of neighbors) {
         if (
-          near.x < 0 ||
-          near.y < 0 ||
-          near.x >= boardSize ||
-          near.y >= boardSize ||
-          next[near.y][near.x] !== opponent
+          next.x < 0 ||
+          next.y < 0 ||
+          next.x >= boardSize ||
+          next.y >= boardSize ||
+          nextBoard[next.y][next.x] !== opponent
         ) {
           continue;
         }
 
-        const enemy = group(next, near.x, near.y);
-        if (enemy.liberties === 0) {
-          enemy.stones.forEach((stone) => {
-            next[stone.y][stone.x] = null;
+        const enemyGroup = getGroup(nextBoard, next.x, next.y);
+
+        if (enemyGroup.liberties === 0) {
+          enemyGroup.stones.forEach((stone) => {
+            nextBoard[stone.y][stone.x] = null;
             captured++;
           });
         }
       }
 
-      if (group(next, x, y).liberties === 0 && captured === 0) return null;
-      return { board: next, captured };
+      if (getGroup(nextBoard, x, y).liberties === 0 && captured === 0) {
+        return null;
+      }
+
+      return { board: nextBoard, captured };
     },
-    [boardSize, group]
+    [boardSize, getGroup]
   );
 
-  const sgf = useCallback(
-    (moves: Move[]) =>
-      `(;GM[1]FF[4]SZ[${boardSize}]KM[6.5]RU[Japanese]${moves
+  const getSgf = useCallback(
+    (moves: Move[]) => {
+      const sequence = moves
         .map(
           ({ x, y, color }) =>
             `;${color}[${String.fromCharCode(97 + x)}${String.fromCharCode(
               97 + y
             )}]`
         )
-        .join('')})`,
+        .join('');
+
+      return `(;GM[1]FF[4]SZ[${boardSize}]KM[6.5]RU[Japanese]${sequence})`;
+    },
     [boardSize]
   );
 
-  const validMoves = useCallback(
-    (current: Stone[][], color: Color) => {
-      const values: Point[] = [];
+  const getValidMoves = useCallback(
+    (currentBoard: Stone[][], color: Color): Point[] => {
+      const moves: Point[] = [];
+
       for (let y = 0; y < boardSize; y++) {
         for (let x = 0; x < boardSize; x++) {
-          if (playMove(current, x, y, color)) values.push({ x, y });
+          if (playMove(currentBoard, x, y, color)) moves.push({ x, y });
         }
       }
-      return values;
+
+      return moves;
     },
     [boardSize, playMove]
   );
 
-  const requestAi = useCallback(
-    async (current: Stone[][], moves: Move[], prompt: string) => {
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      setThinking(true);
+  // API 응답을 기다리지 않고 즉시 둘 수 있는 빠른 AI 수 선택
+  const chooseFastAiMove = useCallback(
+    (currentBoard: Stone[][], color: Color): Point | null => {
+      const valid = getValidMoves(currentBoard, color);
+      if (!valid.length) return null;
 
-      const aiColor: Color = userColor === 'B' ? 'W' : 'B';
+      const center = (boardSize - 1) / 2;
+
+      return valid
+        .map((move) => ({
+          move,
+          distance: Math.abs(move.x - center) + Math.abs(move.y - center),
+        }))
+        .sort((a, b) => a.distance - b.distance)[0].move;
+    },
+    [boardSize, getValidMoves]
+  );
+
+  const requestAnalysis = useCallback(
+    async (
+      currentHistory: Move[],
+      userMove: Move,
+      aiMove: Move | null
+    ) => {
+      analysisAbortRef.current?.abort();
+
+      const controller = new AbortController();
+      analysisAbortRef.current = controller;
+      setIsAnalyzing(true);
+
+      const userColumn = String.fromCharCode(
+        65 + (userMove.x >= 8 ? userMove.x + 1 : userMove.x)
+      );
+      const userCoordinate = `${userColumn}${boardSize - userMove.y}`;
+
+      const aiCoordinate = aiMove
+        ? `${String.fromCharCode(
+            65 + (aiMove.x >= 8 ? aiMove.x + 1 : aiMove.x)
+          )}${boardSize - aiMove.y}`
+        : '패스';
 
       try {
         const response = await fetch('/api/go-explain', {
@@ -167,135 +216,165 @@ export default function Home() {
           headers: { 'Content-Type': 'application/json' },
           signal: controller.signal,
           body: JSON.stringify({
-            sgf: sgf(moves),
+            sgf: getSgf(currentHistory),
             level,
-            userQuestion: prompt,
+            userQuestion: `사용자가 ${userCoordinate}에 착수했고 AI는 ${aiCoordinate}에 응수했습니다. 짧고 이해하기 쉽게 강평해 주세요.`,
           }),
         });
 
         const data = await response.json();
-        let target: Point | null = null;
 
-        if (response.ok && typeof data.result === 'string') {
+        if (!response.ok) {
+          throw new Error(data.error || 'AI 분석 요청 실패');
+        }
+
+        if (typeof data.result === 'string') {
           setExplanation(data.result);
-          const match = data.result.match(
-            /NEXT_MOVE\s*:\s*([A-T])\s*(1[0-9]|[1-9])/i
-          );
-
-          if (match) {
-            let x = match[1].toUpperCase().charCodeAt(0) - 65;
-            if (x > 8) x--; // I 열 제외
-            const y = boardSize - Number(match[2]);
-
-            if (playMove(current, x, y, aiColor)) target = { x, y };
-          }
-        } else {
-          setExplanation(`AI 오류: ${data.error || '연결 실패'}`);
-        }
-
-        if (!target) {
-          const candidates = validMoves(current, aiColor);
-          target = candidates[Math.floor(Math.random() * candidates.length)] ?? null;
-        }
-
-        if (target) {
-          const result = playMove(current, target.x, target.y, aiColor);
-          if (result) {
-            setBoard(result.board);
-            setHistory([...moves, { ...target, color: aiColor }]);
-            if (aiColor === 'B') setCapturedWhite((v) => v + result.captured);
-            else setCapturedBlack((v) => v + result.captured);
-          }
         }
       } catch (error) {
         if (!(error instanceof DOMException && error.name === 'AbortError')) {
-          setExplanation('AI 튜터 연결에 실패했습니다. 다시 시도해 주세요.');
+          setExplanation(
+            error instanceof Error
+              ? `AI 분석 오류: ${error.message}`
+              : 'AI 분석에 실패했습니다.'
+          );
         }
       } finally {
-        if (abortRef.current === controller) {
-          abortRef.current = null;
-          setThinking(false);
+        if (analysisAbortRef.current === controller) {
+          analysisAbortRef.current = null;
+          setIsAnalyzing(false);
         }
       }
     },
-    [level, playMove, sgf, userColor, validMoves, boardSize]
+    [boardSize, getSgf, level]
+  );
+
+  const applyAiMove = useCallback(
+    (currentBoard: Stone[][], currentHistory: Move[]) => {
+      const aiColor: Color = userColor === 'B' ? 'W' : 'B';
+      const target = chooseFastAiMove(currentBoard, aiColor);
+
+      if (!target) {
+        setExplanation('AI가 둘 수 있는 자리가 없습니다.');
+        return { board: currentBoard, history: currentHistory, move: null };
+      }
+
+      const result = playMove(currentBoard, target.x, target.y, aiColor);
+
+      if (!result) {
+        return { board: currentBoard, history: currentHistory, move: null };
+      }
+
+      const aiMove: Move = { ...target, color: aiColor };
+      const nextHistory = [...currentHistory, aiMove];
+
+      setBoard(result.board);
+      setHistory(nextHistory);
+
+      if (aiColor === 'B') {
+        setCapturedWhite((value) => value + result.captured);
+      } else {
+        setCapturedBlack((value) => value + result.captured);
+      }
+
+      return { board: result.board, history: nextHistory, move: aiMove };
+    },
+    [chooseFastAiMove, playMove, userColor]
   );
 
   const startGame = () => {
-    abortRef.current?.abort();
-    setBoard(emptyBoard(boardSize));
+    analysisAbortRef.current?.abort();
+
+    const newBoard = createBoard(boardSize);
+    setBoard(newBoard);
     setHistory([]);
     setCapturedBlack(0);
     setCapturedWhite(0);
     setExplanation('대국이 시작되었습니다.');
     setStarted(true);
+
+    if (userColor === 'W') {
+      const aiResult = applyAiMove(newBoard, []);
+
+      if (aiResult.move) {
+        void requestAnalysis(
+          aiResult.history,
+          aiResult.move,
+          aiResult.move
+        );
+      }
+    }
   };
 
-  useEffect(() => {
-    if (started && userColor === 'W' && history.length === 0 && !thinking) {
-      void requestAi(board, [], '흑의 첫 수와 간단한 이유를 설명해 주세요.');
-    }
-  }, [started, userColor, history.length, thinking, board, requestAi]);
-
-  useEffect(() => {
-    return () => abortRef.current?.abort();
-  }, []);
-
-  const clickBoard = (event: React.MouseEvent<SVGSVGElement>) => {
-    if (!userTurn) return;
+  const handleBoardClick = (event: React.MouseEvent<SVGSVGElement>) => {
+    if (!isUserTurn) return;
 
     const rect = event.currentTarget.getBoundingClientRect();
 
-    // CSS 표시 크기와 SVG 내부 좌표계의 차이를 보정한다.
+    // 화면에서 보이는 SVG 크기와 내부 바둑판 좌표를 일치시킨다.
     const svgX = (event.clientX - rect.left) * (boardPixels / rect.width);
     const svgY = (event.clientY - rect.top) * (boardPixels / rect.height);
+
     const x = Math.round((svgX - PADDING) / cellSize);
     const y = Math.round((svgY - PADDING) / cellSize);
 
     if (x < 0 || y < 0 || x >= boardSize || y >= boardSize) return;
 
-    // 교차점에서 너무 먼 클릭은 무시한다.
     const pointX = PADDING + x * cellSize;
     const pointY = PADDING + y * cellSize;
+
+    // 교차점과 지나치게 먼 클릭은 무시
     if (Math.hypot(svgX - pointX, svgY - pointY) > cellSize * 0.48) return;
 
-    const result = playMove(board, x, y, userColor);
-    if (!result) {
+    const userResult = playMove(board, x, y, userColor);
+
+    if (!userResult) {
       alert('이미 돌이 있거나 자충수인 자리입니다.');
       return;
     }
 
-    const nextHistory = [...history, { x, y, color: userColor }];
-    setBoard(result.board);
-    setHistory(nextHistory);
+    const userMove: Move = { x, y, color: userColor };
+    const afterUserHistory = [...history, userMove];
 
-    if (userColor === 'B') setCapturedWhite((v) => v + result.captured);
-    else setCapturedBlack((v) => v + result.captured);
+    setBoard(userResult.board);
+    setHistory(afterUserHistory);
 
-    const column = String.fromCharCode(65 + (x >= 8 ? x + 1 : x));
-    void requestAi(
-      result.board,
-      nextHistory,
-      `사용자가 ${column}${boardSize - y}에 착수했습니다. 4단계 강평과 AI 응수를 제공하세요.`
-    );
+    if (userColor === 'B') {
+      setCapturedWhite((value) => value + userResult.captured);
+    } else {
+      setCapturedBlack((value) => value + userResult.captured);
+    }
+
+    // AI는 즉시 착수한다.
+    const aiResult = applyAiMove(userResult.board, afterUserHistory);
+
+    // 강평은 대국 진행을 막지 않고 별도로 생성한다.
+    void requestAnalysis(aiResult.history, userMove, aiResult.move);
   };
 
   const loadGames = useCallback(async () => {
     try {
       const response = await fetch('/api/games');
       const data = await response.json();
+
       if (response.ok) setGames(data.games ?? []);
     } catch {
-      // 저장 목록 실패는 대국을 막지 않는다.
+      // 기보 목록 오류는 대국 진행을 방해하지 않는다.
     }
   }, []);
 
   useEffect(() => {
     void loadGames();
+
+    return () => analysisAbortRef.current?.abort();
   }, [loadGames]);
 
   const saveGame = async () => {
-    if (!history.length) return alert('대국을 진행한 후 저장해 주세요.');
+    if (!history.length) {
+      alert('대국을 진행한 후 저장해 주세요.');
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -304,26 +383,36 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: `AI 튜터링 (${boardSize}x${boardSize} / ${level})`,
-          sgf: sgf(history),
+          sgf: getSgf(history),
           user_level: level,
           ai_summary: explanation,
         }),
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || '저장 실패');
+
+      if (!response.ok) {
+        throw new Error(data.error || '기보 저장 실패');
+      }
 
       alert('기보를 저장했습니다.');
       void loadGames();
     } catch (error) {
-      alert(error instanceof Error ? error.message : '저장에 실패했습니다.');
+      alert(error instanceof Error ? error.message : '기보 저장에 실패했습니다.');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <main style={{ maxWidth: 1150, margin: '0 auto', padding: 20 }}>
+    <main
+      style={{
+        maxWidth: 1150,
+        margin: '0 auto',
+        padding: 20,
+        fontFamily: 'Arial, sans-serif',
+      }}
+    >
       <h1>🎓 AI 바둑 튜터 대국실</h1>
 
       <section
@@ -334,106 +423,118 @@ export default function Home() {
           marginBottom: 24,
         }}
       >
-        <select
-          value={boardSize}
-          disabled={started}
-          onChange={(e) => setBoardSize(Number(e.target.value))}
-        >
-          <option value={9}>9 × 9</option>
-          <option value={13}>13 × 13</option>
-          <option value={19}>19 × 19</option>
-        </select>{' '}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <select
+            value={boardSize}
+            disabled={started}
+            onChange={(event) => setBoardSize(Number(event.target.value))}
+          >
+            <option value={9}>9 × 9</option>
+            <option value={13}>13 × 13</option>
+            <option value={19}>19 × 19</option>
+          </select>
 
-        <select
-          value={level}
-          disabled={started}
-          onChange={(e) => setLevel(e.target.value)}
-        >
-          <option>입문자</option>
-          <option>초급자</option>
-          <option>중급자</option>
-          <option>고급자</option>
-        </select>{' '}
+          <select
+            value={level}
+            disabled={started}
+            onChange={(event) => setLevel(event.target.value)}
+          >
+            <option value="입문자">입문자</option>
+            <option value="초급자">초급자</option>
+            <option value="중급자">중급자</option>
+            <option value="고급자">고급자</option>
+          </select>
 
-        <select
-          value={userColor}
-          disabled={started}
-          onChange={(e) => setUserColor(e.target.value as Color)}
-        >
-          <option value="B">⚫ 흑 (선공)</option>
-          <option value="W">⚪ 백 (후공)</option>
-        </select>{' '}
+          <select
+            value={userColor}
+            disabled={started}
+            onChange={(event) => setUserColor(event.target.value as Color)}
+          >
+            <option value="B">⚫ 흑 (선공)</option>
+            <option value="W">⚪ 백 (후공)</option>
+          </select>
 
-        <button onClick={started ? () => setStarted(false) : startGame}>
-          {started ? '설정 변경 / 재시작' : '대국 시작'}
-        </button>{' '}
-
-        {started && (
-          <button disabled={saving} onClick={saveGame}>
-            {saving ? '저장 중...' : '기보 저장'}
+          <button onClick={started ? () => setStarted(false) : startGame}>
+            {started ? '설정 변경 / 재시작' : '대국 시작'}
           </button>
-        )}
+
+          {started && (
+            <button disabled={saving} onClick={saveGame}>
+              {saving ? '저장 중…' : '기보 저장'}
+            </button>
+          )}
+        </div>
 
         {started && (
-          <p>
-            {thinking
-              ? '🤖 AI가 분석 중입니다.'
-              : userTurn
-                ? '👉 당신의 차례입니다.'
-                : '🤖 AI 차례입니다.'}
+          <p style={{ marginBottom: 0 }}>
+            {isUserTurn ? '👉 당신의 차례입니다.' : '🤖 AI가 응수했습니다.'}
             {' '}총 {history.length}수 · 흑 따냄 {capturedWhite} · 백 따냄{' '}
             {capturedBlack}
           </p>
         )}
       </section>
 
-      <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-        <div
+      <div
+        style={{
+          display: 'flex',
+          gap: 24,
+          flexWrap: 'wrap',
+          alignItems: 'flex-start',
+        }}
+      >
+        <section
           style={{
-            background: '#dc9d40',
+            width: 'min(100%, 544px)',
+            height: 'fit-content',
+            alignSelf: 'flex-start',
             padding: 12,
             borderRadius: 8,
-            width: 'min(100%, 544px)',
+            background: '#dc9d40',
+            boxShadow: '0 4px 12px rgba(0,0,0,.2)',
           }}
         >
           <svg
             viewBox={`0 0 ${boardPixels} ${boardPixels}`}
-            width="100%"
+            width={boardPixels}
+            height={boardPixels}
             role="grid"
             aria-label={`${boardSize} x ${boardSize} 바둑판`}
-            onClick={clickBoard}
+            onClick={handleBoardClick}
             style={{
               display: 'block',
-              cursor: userTurn ? 'pointer' : 'not-allowed',
+              width: '100%',
+              height: 'auto',
+              cursor: isUserTurn ? 'pointer' : 'not-allowed',
               touchAction: 'manipulation',
             }}
           >
-            {Array.from({ length: boardSize }, (_, i) => (
-              <g key={i}>
+            {Array.from({ length: boardSize }, (_, index) => (
+              <g key={index}>
                 <line
                   x1={PADDING}
-                  y1={PADDING + i * cellSize}
+                  y1={PADDING + index * cellSize}
                   x2={PADDING + (boardSize - 1) * cellSize}
-                  y2={PADDING + i * cellSize}
-                  stroke="black"
+                  y2={PADDING + index * cellSize}
+                  stroke="#111"
                 />
                 <line
-                  x1={PADDING + i * cellSize}
+                  x1={PADDING + index * cellSize}
                   y1={PADDING}
-                  x2={PADDING + i * cellSize}
+                  x2={PADDING + index * cellSize}
                   y2={PADDING + (boardSize - 1) * cellSize}
-                  stroke="black"
+                  stroke="#111"
                 />
               </g>
             ))}
 
-            {starPoints(boardSize).flatMap((x) =>
-              starPoints(boardSize).map((y) => (
+            {getStarPoints(boardSize).flatMap((x) =>
+              getStarPoints(boardSize).map((y) => (
                 <circle
                   key={`${x}-${y}`}
                   cx={PADDING + x * cellSize}
                   cy={PADDING + y * cellSize}
                   r={3}
+                  fill="#111"
                 />
               ))
             )}
@@ -441,8 +542,10 @@ export default function Home() {
             {board.map((row, y) =>
               row.map((stone, x) => {
                 if (!stone) return null;
-                const last = history.at(-1);
-                const isLast = last?.x === x && last?.y === y;
+
+                const lastMove = history.at(-1);
+                const isLastMove =
+                  lastMove?.x === x && lastMove?.y === y;
 
                 return (
                   <g key={`${x}-${y}`}>
@@ -453,12 +556,12 @@ export default function Home() {
                       fill={stone === 'B' ? '#111' : '#fafafa'}
                       stroke={stone === 'B' ? '#000' : '#bbb'}
                     />
-                    {isLast && (
+                    {isLastMove && (
                       <circle
                         cx={PADDING + x * cellSize}
                         cy={PADDING + y * cellSize}
                         r={4}
-                        fill={stone === 'B' ? '#f44' : '#c00'}
+                        fill={stone === 'B' ? '#ff4d4d' : '#cc0000'}
                       />
                     )}
                   </g>
@@ -466,7 +569,7 @@ export default function Home() {
               })
             )}
           </svg>
-        </div>
+        </section>
 
         <aside style={{ flex: 1, minWidth: 320 }}>
           <section
@@ -475,11 +578,22 @@ export default function Home() {
               padding: 18,
               border: '1px solid #cbd5e1',
               borderRadius: 8,
+              background: '#fff',
             }}
           >
             <h3>🤖 AI 튜터 실시간 강평 및 분석</h3>
-            <div style={{ whiteSpace: 'pre-wrap' }}>
-              {thinking ? 'AI가 분석 중입니다…' : explanation}
+            {isAnalyzing && (
+              <p style={{ color: '#b45309' }}>강평을 작성 중입니다…</p>
+            )}
+            <div
+              style={{
+                whiteSpace: 'pre-wrap',
+                lineHeight: 1.7,
+                maxHeight: 420,
+                overflowY: 'auto',
+              }}
+            >
+              {explanation}
             </div>
           </section>
 
@@ -489,6 +603,7 @@ export default function Home() {
               padding: 16,
               border: '1px solid #e2e8f0',
               borderRadius: 8,
+              background: '#f8fafc',
             }}
           >
             <h3>📁 복기용 대국 보관함</h3>

@@ -38,7 +38,7 @@ export default function Home() {
     return [];
   };
 
-  // --- 국제 표준 바둑 룰 엔진 (활로/따냄/사활) ---
+  // --- 국제 표준 바둑 룰 엔진 ---
   const getGroupAndLiberties = (grid: Stone[][], startX: number, startY: number) => {
     const color = grid[startY][startX];
     if (!color) return { group: [], liberties: 0 };
@@ -146,7 +146,7 @@ export default function Home() {
     setHistory([]);
     setCapturedB(0);
     setCapturedW(0);
-    setAiExplanation('대국이 시작되었습니다. 바둑판 교차점에 착수하시면 4단계 튜터 코칭 강평이 출력됩니다.');
+    setAiExplanation('대국이 시작되었습니다. 바둑판에 착수하면 AI 튜터의 실시간 4단계 분석 강평이 출력됩니다.');
     setGameStarted(true);
   };
 
@@ -190,7 +190,7 @@ export default function Home() {
             }
           }
         } else {
-          setAiExplanation('AI 튜터 해설을 가져오는 중 오류가 발생하여 예비 착수를 계속합니다.');
+          setAiExplanation(`API 오류: ${data.error || 'Gemini 응답 실패'}\n(규칙 엔진에 의해 착수를 계속합니다.)`);
         }
 
         if (targetX === null || targetY === null) {
@@ -214,9 +214,9 @@ export default function Home() {
         } else {
           setAiExplanation('더 이상 둘 수 있는 유효한 위치가 없습니다. 대국이 종료되었습니다.');
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error(err);
-        setAiExplanation('통신 오류가 발생했습니다. 대국 진행을 위해 예비 착수를 적용합니다.');
+        setAiExplanation('통신 에러가 발생하여 규칙 엔진으로 착수를 대진했습니다.');
       } finally {
         setIsAiThinking(false);
       }
@@ -226,7 +226,7 @@ export default function Home() {
 
   useEffect(() => {
     if (gameStarted && userColor === 'W' && history.length === 0 && !isAiThinking) {
-      const prompt = `당신은 ${boardSize}x${boardSize} 바둑판의 흑(선공) 대국자이자 전문 AI 튜터입니다. 첫 수를 착수하고 포석 가치를 설명해 주세요. 마지막 줄에 "NEXT_MOVE: [좌표]"를 표기하세요.`;
+      const prompt = `당신은 ${boardSize}x${boardSize} 바둑판의 흑(선공) 대국자이자 AI 튜터입니다. 첫 착수 후 포석 이유를 설명해 주세요. 마지막 줄에 "NEXT_MOVE: [좌표]"를 출력하세요.`;
       triggerAiMove(board, history, prompt);
     }
   }, [gameStarted, userColor, history, isAiThinking, board, boardSize, triggerAiMove]);
@@ -248,7 +248,7 @@ export default function Home() {
 
     const moveRes = playMove(board, x, y, userColor);
     if (!moveRes) {
-      alert('이미 돌이 존재하거나 금수수(자충수) 위치입니다.');
+      alert('이미 돌이 있거나 금수수(자충수) 위치입니다.');
       return;
     }
 
@@ -265,14 +265,14 @@ export default function Home() {
 
     const prompt = `
 사용자가 방금 [${coordStr}] 위치에 ${userColor === 'B' ? '흑' : '백'}으로 착수했습니다.
-지정된 4가지 강평 항목(착수 평가, 형세 판단, 추천 맥점, AI 응수 이유)을 완성해 주세요.
+4가지 강평 항목(착수 평가, 형세 판단, 추천 맥점, AI 응수 이유)을 완성해 주세요.
 `;
 
     triggerAiMove(moveRes.newBoard, updatedHistory, prompt);
   };
 
   const handleSaveGame = async () => {
-    if (history.length === 0) return alert('대국을 시작한 후 저장해 주세요.');
+    if (history.length === 0) return alert('대국을 진행한 후 저장해 주세요.');
     setSaving(true);
     try {
       const res = await fetch('/api/games', {
@@ -286,7 +286,7 @@ export default function Home() {
         }),
       });
       if (res.ok) {
-        alert('대국 기록과 튜터 코칭 내용이 보관함에 저장되었습니다!');
+        alert('대국 기록과 튜터 강평 저장이 완료되었습니다!');
         fetchGames();
       }
     } catch (err) {

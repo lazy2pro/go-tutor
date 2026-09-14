@@ -52,7 +52,7 @@ NEXT_MOVE: [좌표]
 
     // gemini-2.5-flash 모델 호출
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       contents: fullPrompt,
     });
 

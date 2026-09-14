@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 const BOARD_SIZE = 19;
 const CELL_SIZE = 28;
@@ -20,7 +20,6 @@ export default function Home() {
   const [saving, setSaving] = useState(false);
   const [games, setGames] = useState<any[]>([]);
 
-  // SGF 생성
   const generateSgf = (hist = history) => {
     let sgf = `(;GM[1]FF[4]SZ[19]KM[6.5]RU[Japanese]`;
     hist.forEach((step) => {
@@ -32,21 +31,103 @@ export default function Home() {
     return sgf;
   };
 
-  // 빈 교차점 랜덤 찾기 (Fallback 전용)
   const getRandomEmptyCell = (currentBoard: (string | null)[][]) => {
     const emptyCells: { x: number; y: number }[] = [];
     for (let y = 0; y < BOARD_SIZE; y++) {
       for (let x = 0; x < BOARD_SIZE; x++) {
-        if (currentBoard[y][x] === null) {
-          emptyCells.push({ x, y });
-        }
+        if (currentBoard[y][x] === null) emptyCells.push({ x, y });
       }
     }
     if (emptyCells.length === 0) return null;
     return emptyCells[Math.floor(Math.random() * emptyCells.length)];
   };
 
-  // 사용자 착수 ➔ 분석 및 AI 응수
+  // AI 착수 및 해설 통합 함수
+  const triggerAiMove = useCallback(
+    async (currentBoard: (string | null)[][], currentHistory: typeof history, promptText: string) => {
+      setIsAiThinking(true);
+      const aiColor = userColor === 'B' ? 'W' : 'B';
+
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000); // 12초 타임아웃
+
+        const res = await fetch('/api/go-explain', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sgf: generateSgf(currentHistory),
+            level,
+            userQuestion: promptText,
+          }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+        const data = await res.json();
+
+        let targetX: number | null = null;
+        let targetY: number | null = null;
+
+        if (res.ok && data.result) {
+          setAiExplanation(data.result);
+          const match = data.result.match(/NEXT_MOVE\s*:\s*([A-T])\s*(1[0-9]|[1-9])/i);
+
+          if (match) {
+            const colChar = match[1].toUpperCase();
+            const rowNum = parseInt(match[2], 10);
+            let code = colChar.charCodeAt(0) - 65;
+            if (code > 8) code -= 1;
+            const calcY = 19 - rowNum;
+
+            if (code >= 0 && code < 19 && calcY >= 0 && calcY < 19 && currentBoard[calcY][code] === null) {
+              targetX = code;
+              targetY = calcY;
+            }
+          }
+        }
+
+        // 파싱 실패 또는 타임아웃 시 자동 위치 착수
+        if (targetX === null || targetY === null) {
+          const fallback = getRandomEmptyCell(currentBoard);
+          if (fallback) {
+            targetX = fallback.x;
+            targetY = fallback.y;
+          }
+        }
+
+        if (targetX !== null && targetY !== null) {
+          const updatedBoard = currentBoard.map((r) => [...r]);
+          updatedBoard[targetY][targetX] = aiColor;
+          setBoard(updatedBoard);
+          setHistory([...currentHistory, { x: targetX, y: targetY, color: aiColor }]);
+        }
+      } catch (err) {
+        console.error('AI 착수 에러/타임아웃, 예비 착수 진행');
+        const fallback = getRandomEmptyCell(currentBoard);
+        if (fallback) {
+          const updatedBoard = currentBoard.map((r) => [...r]);
+          updatedBoard[fallback.y][fallback.x] = aiColor;
+          setBoard(updatedBoard);
+          setHistory([...currentHistory, { x: fallback.x, y: fallback.y, color: aiColor }]);
+          setAiExplanation('응답 시간이 지연되어 AI가 빠르게 착수를 완료했습니다.');
+        }
+      } finally {
+        setIsAiThinking(false);
+      }
+    },
+    [userColor, level]
+  );
+
+  // AI가 선공(흑)일 때 대국 시작 시 자동 첫 수 착수
+  useEffect(() => {
+    if (userColor === 'W' && history.length === 0 && !isAiThinking) {
+      const prompt = `당신은 흑(선공) 대국 상대입니다. 첫 수를 둔 후 답변의 마지막 줄에 NEXT_MOVE: [좌표] 형태로 좌표를 출력하세요. (예: NEXT_MOVE: Q16)`;
+      triggerAiMove(board, history, prompt);
+    }
+  }, [userColor, history, isAiThinking, board, triggerAiMove]);
+
+  // 사용자 클릭
   const handleBoardClick = async (event: React.MouseEvent<SVGSVGElement>) => {
     if (isAiThinking) return;
 
@@ -63,7 +144,6 @@ export default function Home() {
     if (x < 0 || x >= BOARD_SIZE || y < 0 || y >= BOARD_SIZE) return;
     if (board[y][x] !== null) return;
 
-    // 1. 사용자 돌 착수
     const newBoard = board.map((row) => [...row]);
     newBoard[y][x] = userColor;
     setBoard(newBoard);
@@ -72,88 +152,14 @@ export default function Home() {
     const updatedHistory = [...history, userMove];
     setHistory(updatedHistory);
 
-    // 2. AI 분석 및 다음 수 요청
-    setIsAiThinking(true);
-    const colName = String.fromCharCode(65 + (x >= 8 ? x + 1 : x)); // I열 제외 바둑 표준 좌표
+    const colName = String.fromCharCode(65 + (x >= 8 ? x + 1 : x));
     const coordStr = `${colName}${19 - y}`;
 
-    try {
-      const prompt = `
-사용자가 ${userColor === 'B' ? '흑' : '백'}으로 [${coordStr}] 자리에 두었습니다. (선택된 AI 난이도: ${level})
+    const prompt = `사용자가 ${userColor === 'B' ? '흑' : '백'}으로 [${coordStr}]에 두었습니다.
+1. 사용자 착수의 목적/이점을 ${level} 수준에 맞춰 설명하세요.
+2. 당신이 둘 다음 착수를 결정하고, 답변 맨 마지막 줄에 "NEXT_MOVE: [좌표]" 형식으로만 출력하세요.`;
 
-다음 지침을 엄격히 따라 작성해 주세요:
-1. [사용자 수 분석]: 방금 사용자가 둔 수의 이점과 목적을 ${level} 눈높이에 맞춰 친절히 설명해 주세요.
-2. [AI 대국 응수]: 당신은 ${userColor === 'B' ? '백' : '흑'} 대국 상대입니다. ${level} 수준에 맞춰 당신이 다음에 둘 착수 위치를 정하세요.
-
-★ 중요: 답변의 맨 마지막 줄에 반드시오직 다음 형식으로만 AI의 착수 좌표를 추가해 주세요 (예: NEXT_MOVE: K10)
-NEXT_MOVE: [좌표]
-`;
-
-      const res = await fetch('/api/go-explain', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sgf: generateSgf(updatedHistory),
-          level,
-          userQuestion: prompt,
-        }),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        const text = data.result || '';
-        setAiExplanation(text);
-
-        // 3. 유연한 좌표 파싱 (NEXT_MOVE: X10 형태)
-        let aiX: number | null = null;
-        let aiY: number | null = null;
-
-        const match = text.match(/NEXT_MOVE\s*:\s*([A-T])\s*(1[0-9]|[1-9])/i);
-
-        if (match) {
-          const colChar = match[1].toUpperCase();
-          const rowNum = parseInt(match[2], 10);
-
-          // 좌표 계산
-          let code = colChar.charCodeAt(0) - 65;
-          if (code > 8) code -= 1; // 'I'열 오프셋 처리
-
-          const calcY = 19 - rowNum;
-
-          if (code >= 0 && code < 19 && calcY >= 0 && calcY < 19 && newBoard[calcY][code] === null) {
-            aiX = code;
-            aiY = calcY;
-          }
-        }
-
-        // 파싱 실패 시 빈 교차점 자동 탐색 (Fallback)
-        if (aiX === null || aiY === null) {
-          const fallback = getRandomEmptyCell(newBoard);
-          if (fallback) {
-            aiX = fallback.x;
-            aiY = fallback.y;
-          }
-        }
-
-        // AI 돌 착수 실행
-        if (aiX !== null && aiY !== null) {
-          const targetX = aiX;
-          const targetY = aiY;
-          const aiColor = userColor === 'B' ? 'W' : 'B';
-
-          setTimeout(() => {
-            const aiBoard = newBoard.map((r) => [...r]);
-            aiBoard[targetY][targetX] = aiColor;
-            setBoard(aiBoard);
-            setHistory([...updatedHistory, { x: targetX, y: targetY, color: aiColor }]);
-          }, 400);
-        }
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsAiThinking(false);
-    }
+    triggerAiMove(newBoard, updatedHistory, prompt);
   };
 
   const handleReset = () => {
@@ -177,7 +183,7 @@ NEXT_MOVE: [좌표]
         }),
       });
       if (res.ok) {
-        alert('대국 기록이 성공적으로 저장되었습니다!');
+        alert('대국 기록이 저장되었습니다!');
         fetchGames();
       }
     } catch (err) {
@@ -207,23 +213,29 @@ NEXT_MOVE: [좌표]
   return (
     <div style={{ padding: '20px', fontFamily: 'sans-serif', maxWidth: '1150px', margin: '0 auto' }}>
       <h1>AI 대국 & 실시간 분석 튜터</h1>
-      <p style={{ color: '#666' }}>원하는 난이도를 선택하고 바둑을 두세요. Gemini AI가 당신의 수를 분석하고 바로 맞수를 둡니다.</p>
+      <p style={{ color: '#666' }}>난이도를 선택하고 대국을 시작하세요.</p>
 
-      {/* 대국 설정 바 */}
       <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', background: '#f0f4f8', padding: '12px', borderRadius: '8px' }}>
         <label>
           <strong>AI 난이도: </strong>
           <select value={level} onChange={(e) => setLevel(e.target.value)} style={{ padding: '4px 8px' }}>
-            <option value="입문자">입문자 (기초 규칙/쉬운 수)</option>
-            <option value="초급자">초급자 (기본 행마/사활)</option>
-            <option value="중급자">중급자 (실전 포석/전투)</option>
-            <option value="고급자">고급자 (정교한 수읽기)</option>
+            <option value="입문자">입문자</option>
+            <option value="초급자">초급자</option>
+            <option value="중급자">중급자</option>
+            <option value="고급자">고급자</option>
           </select>
         </label>
 
         <label>
           <strong>내 흑/백 선택: </strong>
-          <select value={userColor} onChange={(e) => { setUserColor(e.target.value as 'B' | 'W'); handleReset(); }} style={{ padding: '4px 8px' }}>
+          <select
+            value={userColor}
+            onChange={(e) => {
+              setUserColor(e.target.value as 'B' | 'W');
+              handleReset();
+            }}
+            style={{ padding: '4px 8px' }}
+          >
             <option value="B">⚫ 흑 (선공)</option>
             <option value="W">⚪ 백 (후공)</option>
           </select>
@@ -235,14 +247,13 @@ NEXT_MOVE: [좌표]
         </button>
 
         <span style={{ marginLeft: 'auto', fontWeight: 'bold', color: isUserTurn ? '#0066cc' : '#d97706' }}>
-          {isUserTurn ? '👉 당신의 차례입니다' : '🤖 AI 대국자가 생각 중...'} (수순: {history.length}수)
+          {isUserTurn ? '👉 당신의 차례입니다' : '🤖 AI 대국자가 착수 중...'} (수순: {history.length}수)
         </span>
       </div>
 
       <div style={{ display: 'flex', gap: '25px', flexWrap: 'wrap' }}>
-        {/* 바둑판 */}
         <div style={{ background: '#DC9D40', padding: '12px', borderRadius: '8px', boxShadow: '0 4px 10px rgba(0,0,0,0.25)' }}>
-          <svg width={BOARD_PIXEL_SIZE} height={BOARD_PIXEL_SIZE} onClick={handleBoardClick} style={{ cursor: isUserTurn ? 'pointer' : 'not-allowed', display: 'block' }}>
+          <svg width={BOARD_PIXEL_SIZE} height={BOARD_PIXEL_SIZE} onClick={handleBoardClick} style={{ cursor: isUserTurn ? 'pointer' : 'wait', display: 'block' }}>
             {Array.from({ length: BOARD_SIZE }).map((_, i) => (
               <g key={i}>
                 <line x1={PADDING} y1={PADDING + i * CELL_SIZE} x2={PADDING + (BOARD_SIZE - 1) * CELL_SIZE} y2={PADDING + i * CELL_SIZE} stroke="#000" strokeWidth="1" />
@@ -271,16 +282,15 @@ NEXT_MOVE: [좌표]
           </svg>
         </div>
 
-        {/* AI 해설 및 대국 보관함 */}
         <div style={{ flex: '1', minWidth: '320px' }}>
           <div style={{ border: '1px solid #ccc', padding: '15px', borderRadius: '8px', backgroundColor: '#fdfdfd', minHeight: '260px' }}>
             <h3 style={{ marginTop: 0, color: '#1a365d' }}>🤖 실시간 착수 분석 & 코칭</h3>
             {isAiThinking ? (
-              <p style={{ color: '#d97706', fontWeight: 'bold' }}>Gemini AI가 수순 분석 및 응수를 계산 중입니다...</p>
+              <p style={{ color: '#d97706', fontWeight: 'bold' }}>Gemini AI가 수순 분석 및 착수를 진행 중입니다...</p>
             ) : aiExplanation ? (
               <div style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6', fontSize: '14px', color: '#2d3748' }}>{aiExplanation}</div>
             ) : (
-              <p style={{ color: '#888' }}>바둑판을 클릭해 첫 수를 놓으세요. 대국 진행과 동시에 수 분석이 출력됩니다.</p>
+              <p style={{ color: '#888' }}>대국을 시작하세요.</p>
             )}
           </div>
 

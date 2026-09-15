@@ -292,11 +292,30 @@ export default function Home() {
       }
     } catch (error: unknown) {
       if (error instanceof DOMException && error.name === 'AbortError') {
-        if (aiRequestRef.current === controller) setAiExplanation('AI 응답 시간이 초과되었습니다. 설정을 확인한 뒤 대국을 다시 시작해 주세요.');
+        if (aiRequestRef.current === controller) {
+          const fallback = getValidMoves(grid, aiColor, positions)[0];
+          if (fallback && applyAiMove(grid, moves, positions, aiColor, fallback)) {
+            setAiExplanation(
+              `AI 응답 시간이 초과되어 규칙 엔진이 ${coordinateName(fallback.x, fallback.y, boardSize)}에 대신 착수했습니다.\n이 수는 Gemini 분석이 아닌 합법적인 대체 수입니다.`
+            );
+          } else {
+            setAiExplanation('AI 응답 시간이 초과되었고 둘 수 있는 대체 착수점이 없습니다.');
+          }
+        }
         return;
       }
       const message = error instanceof Error ? error.message : '알 수 없는 오류';
-      setAiExplanation(`AI 연결 오류 · ${message}\nVercel의 GEMINI_API_KEY와 배포 로그를 확인해 주세요.`);
+      const fallback = getValidMoves(grid, aiColor, positions)[0];
+      if (fallback && applyAiMove(grid, moves, positions, aiColor, fallback)) {
+        const quotaMessage = message.includes('사용량')
+          ? 'Gemini 무료 사용량을 모두 사용했습니다.'
+          : 'Gemini 연결에 실패했습니다.';
+        setAiExplanation(
+          `${quotaMessage}\n규칙 엔진이 ${coordinateName(fallback.x, fallback.y, boardSize)}에 대신 착수해 대국을 계속합니다.\n이 수는 Gemini 분석이 아닌 합법적인 대체 수입니다.`
+        );
+      } else {
+        setAiExplanation('AI 연결에 실패했고 둘 수 있는 대체 착수점이 없습니다.');
+      }
     } finally {
       window.clearTimeout(timeout);
       if (aiRequestRef.current === controller) {

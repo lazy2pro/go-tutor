@@ -74,49 +74,85 @@ export default function Home() {
     if (!soundEnabled) return;
     try {
       const context = await ensureAudio();
-      const now = context.currentTime;
+      const now = context.currentTime + 0.006;
       const master = context.createGain();
-      master.gain.setValueAtTime(0.72, now);
-      master.connect(context.destination);
+      const compressor = context.createDynamicsCompressor();
+      compressor.threshold.value = -18;
+      compressor.knee.value = 8;
+      compressor.ratio.value = 6;
+      compressor.attack.value = 0.001;
+      compressor.release.value = 0.11;
+      master.gain.setValueAtTime(0.92, now);
+      master.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+      master.connect(compressor).connect(context.destination);
 
-      // 돌이 나무판에 닿는 짧은 충격음과 판의 낮은 공명을 합성한다.
-      const impact = context.createOscillator();
-      const impactGain = context.createGain();
-      impact.type = 'sine';
-      impact.frequency.setValueAtTime(920 + Math.random() * 90, now);
-      impact.frequency.exponentialRampToValueAtTime(310, now + 0.035);
-      impactGain.gain.setValueAtTime(0.52, now);
-      impactGain.gain.exponentialRampToValueAtTime(0.001, now + 0.065);
-      impact.connect(impactGain).connect(master);
+      // 단단한 바둑알이 나무판에 부딪히는 매우 짧은 고주파 충격.
+      const stone = context.createOscillator();
+      const stoneGain = context.createGain();
+      stone.type = 'triangle';
+      stone.frequency.setValueAtTime(2100 + Math.random() * 220, now);
+      stone.frequency.exponentialRampToValueAtTime(620, now + 0.019);
+      stoneGain.gain.setValueAtTime(0.82, now);
+      stoneGain.gain.exponentialRampToValueAtTime(0.001, now + 0.034);
+      stone.connect(stoneGain).connect(master);
 
-      const wood = context.createOscillator();
-      const woodGain = context.createGain();
-      wood.type = 'triangle';
-      wood.frequency.setValueAtTime(145 + Math.random() * 24, now);
-      woodGain.gain.setValueAtTime(0.2, now);
-      woodGain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
-      wood.connect(woodGain).connect(master);
-
-      const noiseLength = Math.floor(context.sampleRate * 0.045);
+      // 실제 접촉음처럼 초반에만 들리는 넓은 대역의 '딱' 소리.
+      const noiseLength = Math.floor(context.sampleRate * 0.032);
       const noiseBuffer = context.createBuffer(1, noiseLength, context.sampleRate);
       const noiseData = noiseBuffer.getChannelData(0);
       for (let i = 0; i < noiseLength; i++) {
-        noiseData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / noiseLength, 3);
+        const envelope = Math.exp(-i / (context.sampleRate * 0.0065));
+        noiseData[i] = (Math.random() * 2 - 1) * envelope;
       }
       const noise = context.createBufferSource();
       const filter = context.createBiquadFilter();
       const noiseGain = context.createGain();
       noise.buffer = noiseBuffer;
       filter.type = 'bandpass';
-      filter.frequency.value = 1650;
-      filter.Q.value = 0.8;
-      noiseGain.gain.setValueAtTime(0.2, now);
-      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+      filter.frequency.value = 2400 + Math.random() * 300;
+      filter.Q.value = 0.72;
+      noiseGain.gain.setValueAtTime(0.58, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.032);
       noise.connect(filter).connect(noiseGain).connect(master);
 
-      impact.start(now); impact.stop(now + 0.07);
-      wood.start(now); wood.stop(now + 0.17);
-      noise.start(now); noise.stop(now + 0.05);
+      // 두꺼운 목재 판에서 서로 다른 음역으로 울리는 짧은 공명.
+      const resonances = [
+        { frequency: 168 + Math.random() * 10, gain: 0.34, decay: 0.22 },
+        { frequency: 286 + Math.random() * 14, gain: 0.2, decay: 0.16 },
+        { frequency: 438 + Math.random() * 18, gain: 0.1, decay: 0.105 },
+      ];
+      resonances.forEach(({ frequency, gain, decay }) => {
+        const oscillator = context.createOscillator();
+        const oscillatorGain = context.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(frequency, now);
+        oscillatorGain.gain.setValueAtTime(gain, now);
+        oscillatorGain.gain.exponentialRampToValueAtTime(0.001, now + decay);
+        oscillator.connect(oscillatorGain).connect(master);
+        oscillator.start(now);
+        oscillator.stop(now + decay + 0.01);
+      });
+
+      // 작은 방에서 들리는 수준의 짧은 초기 반사만 더해 건조한 전자음을 줄인다.
+      const impulseLength = Math.floor(context.sampleRate * 0.075);
+      const impulse = context.createBuffer(1, impulseLength, context.sampleRate);
+      const impulseData = impulse.getChannelData(0);
+      for (let i = 0; i < impulseLength; i++) {
+        impulseData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (context.sampleRate * 0.016));
+      }
+      const convolver = context.createConvolver();
+      const roomGain = context.createGain();
+      convolver.buffer = impulse;
+      roomGain.gain.value = 0.075;
+      stoneGain.connect(convolver);
+      noiseGain.connect(convolver);
+      convolver.connect(roomGain).connect(compressor);
+
+      stone.start(now);
+      stone.stop(now + 0.04);
+      noise.start(now);
+      noise.stop(now + 0.035);
+      navigator.vibrate?.(12);
     } catch (error) {
       console.warn('착수음을 재생하지 못했습니다.', error);
     }

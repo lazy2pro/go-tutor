@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-const PADDING = 28;
-const BOARD_PIXEL_MAX = 620;
+const PADDING = 38;
+const BOARD_PIXEL_MAX = 680;
 type Stone = 'B' | 'W' | null;
 type Color = Exclude<Stone, null>;
 type Move = { x: number; y: number; color: Color };
@@ -40,6 +40,7 @@ const parseCoordinate = (coordinate: string, size: number): Point | null => {
 export default function Home() {
   const [boardSize, setBoardSize] = useState(9);
   const [level, setLevel] = useState('입문자');
+  const [analysisInterval, setAnalysisInterval] = useState<1 | 2 | 3>(2);
   const [userColor, setUserColor] = useState<Color>('B');
   const [gameStarted, setGameStarted] = useState(false);
   const [board, setBoard] = useState<Stone[][]>([]);
@@ -51,18 +52,30 @@ export default function Home() {
   const [isAiThinking, setIsAiThinking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [geminiCalls, setGeminiCalls] = useState(0);
   const [games, setGames] = useState<SavedGame[]>([]);
+  const [hoverPoint, setHoverPoint] = useState<Point | null>(null);
   const aiRequestRef = useRef<AbortController | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
   const cellSize = Math.floor((BOARD_PIXEL_MAX - PADDING * 2) / (boardSize - 1));
   const boardPixelSize = (boardSize - 1) * cellSize + PADDING * 2;
 
-  const starPoints = useMemo(() => {
-    if (boardSize === 19) return [3, 9, 15];
-    if (boardSize === 13) return [3, 6, 9];
-    return [2, 4, 6];
+  const starPoints = useMemo<Point[]>(() => {
+    if (boardSize === 9) {
+      return [
+        { x: 2, y: 2 }, { x: 6, y: 2 }, { x: 4, y: 4 },
+        { x: 2, y: 6 }, { x: 6, y: 6 },
+      ];
+    }
+    const axes = boardSize === 19 ? [3, 9, 15] : [3, 6, 9];
+    return axes.flatMap((x) => axes.map((y) => ({ x, y })));
   }, [boardSize]);
+
+  const columnNames = useMemo(
+    () => Array.from({ length: boardSize }, (_, x) => String.fromCharCode(65 + (x >= 8 ? x + 1 : x))),
+    [boardSize],
+  );
 
   const ensureAudio = useCallback(async () => {
     if (!audioContextRef.current) audioContextRef.current = new AudioContext();
@@ -220,13 +233,25 @@ export default function Home() {
 
   const getValidMoves = useCallback((grid: Stone[][], color: Color, positions: string[]) => {
     const valid: Array<Point & { score: number }> = [];
+    const stoneCount = grid.flat().filter(Boolean).length;
     for (let y = 0; y < boardSize; y++) {
       for (let x = 0; x < boardSize; x++) {
         const move = playMove(grid, x, y, color);
         if (!move || positions.includes(serializeBoard(move.newBoard))) continue;
         const liberties = getGroupAndLiberties(move.newBoard, x, y).liberties;
         const edgeDistance = Math.min(x, y, boardSize - 1 - x, boardSize - 1 - y);
-        valid.push({ x, y, score: move.capturedCount * 100 + liberties * 4 + Math.min(edgeDistance, 3) });
+        let nearestStone = boardSize * 2;
+        let adjacentOpponent = 0;
+        grid.forEach((row, stoneY) => row.forEach((stone, stoneX) => {
+          if (!stone) return;
+          const distance = Math.abs(stoneX - x) + Math.abs(stoneY - y);
+          nearestStone = Math.min(nearestStone, distance);
+          if (stone !== color && distance === 1) adjacentOpponent += 1;
+        }));
+        const openingSpread = stoneCount < 10 ? Math.min(nearestStone, 5) * 2 : 0;
+        const score = move.capturedCount * 100 + liberties * 4 + adjacentOpponent * 6
+          + Math.min(edgeDistance, 3) * 1.5 + openingSpread + Math.random() * 2;
+        valid.push({ x, y, score });
       }
     }
     return valid.sort((a, b) => b.score - a.score);
@@ -248,6 +273,7 @@ export default function Home() {
     setPositionHistory([serializeBoard(freshBoard)]);
     setCapturedB(0);
     setCapturedW(0);
+    setGeminiCalls(0);
     setAiExplanation('바둑판의 교차점을 눌러 착수하세요. AI는 응수와 네 가지 짧은 강평을 함께 제공합니다.');
     setIsAiThinking(false);
     setGameStarted(true);
@@ -277,6 +303,21 @@ export default function Home() {
     return true;
   }, [playMove, playStoneSound]);
 
+  const playLocalAiMove = useCallback((
+    grid: Stone[][],
+    moves: Move[],
+    positions: string[],
+    aiColor: Color,
+    message: string,
+  ) => {
+    const fallback = getValidMoves(grid, aiColor, positions)[0];
+    if (!fallback || !applyAiMove(grid, moves, positions, aiColor, fallback)) return false;
+    setAiExplanation(
+      `${message}\n규칙 엔진 응수 · ${coordinateName(fallback.x, fallback.y, boardSize)}\n이 수는 Gemini 분석이 아닌 합법적인 빠른 응수입니다.`
+    );
+    return true;
+  }, [applyAiMove, boardSize, getValidMoves]);
+
   const triggerAiMove = useCallback(async (
     grid: Stone[][],
     moves: Move[],
@@ -289,6 +330,7 @@ export default function Home() {
     const timeout = window.setTimeout(() => controller.abort(), 20_000);
     aiRequestRef.current = controller;
     setIsAiThinking(true);
+    setGeminiCalls((count) => count + 1);
 
     try {
       const response = await fetch('/api/go-explain', {
@@ -329,27 +371,17 @@ export default function Home() {
     } catch (error: unknown) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         if (aiRequestRef.current === controller) {
-          const fallback = getValidMoves(grid, aiColor, positions)[0];
-          if (fallback && applyAiMove(grid, moves, positions, aiColor, fallback)) {
-            setAiExplanation(
-              `AI 응답 시간이 초과되어 규칙 엔진이 ${coordinateName(fallback.x, fallback.y, boardSize)}에 대신 착수했습니다.\n이 수는 Gemini 분석이 아닌 합법적인 대체 수입니다.`
-            );
-          } else {
+          if (!playLocalAiMove(grid, moves, positions, aiColor, 'AI 응답 시간이 초과되었습니다.')) {
             setAiExplanation('AI 응답 시간이 초과되었고 둘 수 있는 대체 착수점이 없습니다.');
           }
         }
         return;
       }
       const message = error instanceof Error ? error.message : '알 수 없는 오류';
-      const fallback = getValidMoves(grid, aiColor, positions)[0];
-      if (fallback && applyAiMove(grid, moves, positions, aiColor, fallback)) {
-        const quotaMessage = message.includes('사용량')
-          ? 'Gemini 무료 사용량을 모두 사용했습니다.'
-          : 'Gemini 연결에 실패했습니다.';
-        setAiExplanation(
-          `${quotaMessage}\n규칙 엔진이 ${coordinateName(fallback.x, fallback.y, boardSize)}에 대신 착수해 대국을 계속합니다.\n이 수는 Gemini 분석이 아닌 합법적인 대체 수입니다.`
-        );
-      } else {
+      const quotaMessage = message.includes('사용량')
+        ? 'Gemini 무료 사용량을 모두 사용했습니다.'
+        : 'Gemini 연결에 실패했습니다.';
+      if (!playLocalAiMove(grid, moves, positions, aiColor, quotaMessage)) {
         setAiExplanation('AI 연결에 실패했고 둘 수 있는 대체 착수점이 없습니다.');
       }
     } finally {
@@ -359,7 +391,7 @@ export default function Home() {
         setIsAiThinking(false);
       }
     }
-  }, [applyAiMove, boardSize, generateSgf, getValidMoves, level, userColor]);
+  }, [applyAiMove, boardSize, generateSgf, getValidMoves, level, playLocalAiMove, userColor]);
 
   useEffect(() => {
     if (gameStarted && userColor === 'W' && history.length === 0 && board.length === boardSize && !isAiThinking) {
@@ -400,7 +432,40 @@ export default function Home() {
     void playStoneSound();
     if (userColor === 'B') setCapturedW((value) => value + move.capturedCount);
     else setCapturedB((value) => value + move.capturedCount);
-    void triggerAiMove(move.newBoard, nextHistory, nextPositions, coordinateName(x, y, boardSize));
+    const userMoveCount = nextHistory.filter((playedMove) => playedMove.color === userColor).length;
+    const shouldUseGemini = analysisInterval === 1 || (userColor === 'B'
+      ? (userMoveCount - 1) % analysisInterval === 0
+      : userMoveCount % analysisInterval === 0);
+    if (shouldUseGemini) {
+      void triggerAiMove(move.newBoard, nextHistory, nextPositions, coordinateName(x, y, boardSize));
+    } else {
+      const aiColor: Color = userColor === 'B' ? 'W' : 'B';
+      if (!playLocalAiMove(
+        move.newBoard,
+        nextHistory,
+        nextPositions,
+        aiColor,
+        `Gemini 사용량 절약을 위해 ${analysisInterval}수 간격으로 분석합니다.`,
+      )) {
+        setAiExplanation('규칙 엔진이 둘 수 있는 합법적인 착수점을 찾지 못했습니다.');
+      }
+    }
+  };
+
+  const handleBoardHover = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (!isUserTurn) return setHoverPoint(null);
+    const rect = event.currentTarget.getBoundingClientRect();
+    const svgX = (event.clientX - rect.left) * (boardPixelSize / rect.width);
+    const svgY = (event.clientY - rect.top) * (boardPixelSize / rect.height);
+    const x = Math.round((svgX - PADDING) / cellSize);
+    const y = Math.round((svgY - PADDING) / cellSize);
+    const nearIntersection = Math.abs(svgX - (PADDING + x * cellSize)) < cellSize * 0.48
+      && Math.abs(svgY - (PADDING + y * cellSize)) < cellSize * 0.48;
+    if (nearIntersection && x >= 0 && x < boardSize && y >= 0 && y < boardSize && board[y]?.[x] === null) {
+      setHoverPoint({ x, y });
+    } else {
+      setHoverPoint(null);
+    }
   };
 
   const fetchGames = useCallback(async () => {
@@ -450,11 +515,15 @@ export default function Home() {
   return (
     <main className="app-shell">
       <header className="app-header">
-        <div>
-          <p className="eyebrow">AI GO COACH</p>
-          <h1>AI 바둑 튜터</h1>
+        <div className="brand-lockup">
+          <span className="brand-mark" aria-hidden="true"><i /><i /></span>
+          <div>
+            <p className="eyebrow">PRIVATE GO LESSON</p>
+            <h1>바둑 한 수</h1>
+            <p className="header-copy">처음 배우는 순간부터, 한 수씩 천천히</p>
+          </div>
         </div>
-        <span className="header-badge">{boardSize} × {boardSize}</span>
+        <span className="header-badge"><i /> {gameStarted ? '대국 진행 중' : '연습 준비'}</span>
       </header>
 
       <section className="control-card" aria-label="대국 설정">
@@ -472,6 +541,17 @@ export default function Home() {
           <label><span>내 돌</span>
             <select value={userColor} disabled={gameStarted} onChange={(event) => setUserColor(event.target.value as Color)}>
               <option value="B">● 흑 · 선공</option><option value="W">○ 백 · 후공</option>
+            </select>
+          </label>
+          <label><span>Gemini 분석 주기</span>
+            <select
+              value={analysisInterval}
+              disabled={gameStarted}
+              onChange={(event) => setAnalysisInterval(Number(event.target.value) as 1 | 2 | 3)}
+            >
+              <option value={1}>매 수 · 품질 우선</option>
+              <option value={2}>2수마다 · 균형</option>
+              <option value={3}>3수마다 · 절약</option>
             </select>
           </label>
         </div>
@@ -498,76 +578,136 @@ export default function Home() {
               <strong>{isUserTurn ? '당신의 차례' : isAiThinking ? 'AI가 수를 읽는 중…' : 'AI 응수 완료'}</strong>
               {lastMove && <span>마지막 착수 · {lastMove.color === 'B' ? '흑' : '백'} {coordinateName(lastMove.x, lastMove.y, boardSize)}</span>}
               <span>흑 따냄 {capturedW} · 백 따냄 {capturedB}</span>
+              <span>이번 대국 Gemini 호출 {geminiCalls}회</span>
             </div>
           </div>
         )}
       </section>
 
       <section className="game-layout">
+        <div className="board-area">
         <div className={`board-card ${gameStarted ? '' : 'disabled'}`}>
+          <span className="board-sheen" aria-hidden="true" />
           <svg
             viewBox={`0 0 ${boardPixelSize} ${boardPixelSize}`}
             role="grid"
             aria-label={`${boardSize} x ${boardSize} 바둑판`}
             onPointerUp={handleBoardPointer}
+            onPointerMove={handleBoardHover}
+            onPointerLeave={() => setHoverPoint(null)}
             className={isUserTurn ? 'board active' : 'board'}
           >
             <defs>
               <linearGradient id="boardWood" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stopColor="#efbd69" />
-                <stop offset="0.52" stopColor="#dca044" />
-                <stop offset="1" stopColor="#c88931" />
+                <stop offset="0" stopColor="#f1ca7f" />
+                <stop offset="0.28" stopColor="#e6b35d" />
+                <stop offset="0.7" stopColor="#d99a3f" />
+                <stop offset="1" stopColor="#bf772a" />
               </linearGradient>
+              <radialGradient id="boardLight" cx="30%" cy="18%" r="86%">
+                <stop offset="0" stopColor="#fff4ce" stopOpacity=".35" />
+                <stop offset=".55" stopColor="#fff" stopOpacity="0" />
+                <stop offset="1" stopColor="#6f350d" stopOpacity=".22" />
+              </radialGradient>
               <radialGradient id="blackStone" cx="32%" cy="24%" r="72%">
-                <stop offset="0" stopColor="#686868" />
-                <stop offset="0.22" stopColor="#292929" />
-                <stop offset="0.72" stopColor="#090909" />
-                <stop offset="1" stopColor="#000" />
+                <stop offset="0" stopColor="#747879" />
+                <stop offset="0.12" stopColor="#343839" />
+                <stop offset="0.42" stopColor="#151819" />
+                <stop offset="0.82" stopColor="#060708" />
+                <stop offset="1" stopColor="#020303" />
               </radialGradient>
               <radialGradient id="whiteStone" cx="31%" cy="23%" r="75%">
-                <stop offset="0" stopColor="#fff" />
-                <stop offset="0.45" stopColor="#f7f5ef" />
-                <stop offset="0.82" stopColor="#deddd7" />
-                <stop offset="1" stopColor="#c9c8c2" />
+                <stop offset="0" stopColor="#ffffff" />
+                <stop offset="0.23" stopColor="#fdfcf7" />
+                <stop offset="0.62" stopColor="#ebe8df" />
+                <stop offset="0.88" stopColor="#d2cec3" />
+                <stop offset="1" stopColor="#b8b4aa" />
               </radialGradient>
+              <linearGradient id="stoneGlint" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stopColor="#fff" stopOpacity=".72" />
+                <stop offset=".48" stopColor="#fff" stopOpacity=".08" />
+                <stop offset="1" stopColor="#fff" stopOpacity="0" />
+              </linearGradient>
               <filter id="stoneShadow" x="-40%" y="-40%" width="180%" height="190%">
-                <feDropShadow dx="1.6" dy="3.2" stdDeviation="2.5" floodColor="#2f1b08" floodOpacity="0.55" />
+                <feDropShadow dx="2.2" dy="4.6" stdDeviation="3.4" floodColor="#351805" floodOpacity="0.58" />
               </filter>
               <filter id="woodGrain" x="0" y="0" width="100%" height="100%">
                 <feTurbulence type="fractalNoise" baseFrequency="0.008 0.12" numOctaves="2" seed="18" />
                 <feColorMatrix type="saturate" values="0" />
               </filter>
             </defs>
-            <rect width={boardPixelSize} height={boardPixelSize} rx="12" fill="url(#boardWood)" />
-            <rect width={boardPixelSize} height={boardPixelSize} rx="12" filter="url(#woodGrain)" opacity="0.075" className="wood-texture" />
+            <rect width={boardPixelSize} height={boardPixelSize} rx="10" fill="url(#boardWood)" />
+            <rect width={boardPixelSize} height={boardPixelSize} rx="10" filter="url(#woodGrain)" opacity="0.115" className="wood-texture" />
+            <rect width={boardPixelSize} height={boardPixelSize} rx="10" fill="url(#boardLight)" />
+            {Array.from({ length: 15 }, (_, i) => (
+              <path
+                key={`grain-${i}`}
+                d={`M 0 ${20 + i * (boardPixelSize / 14)} C ${boardPixelSize * .25} ${12 + i * (boardPixelSize / 14)}, ${boardPixelSize * .62} ${31 + i * (boardPixelSize / 14)}, ${boardPixelSize} ${17 + i * (boardPixelSize / 14)}`}
+                className="grain-line"
+              />
+            ))}
             {Array.from({ length: boardSize }, (_, i) => (
               <g key={i}>
                 <line x1={PADDING} y1={PADDING + i * cellSize} x2={boardPixelSize - PADDING} y2={PADDING + i * cellSize} />
                 <line x1={PADDING + i * cellSize} y1={PADDING} x2={PADDING + i * cellSize} y2={boardPixelSize - PADDING} />
               </g>
             ))}
-            {starPoints.flatMap((x) => starPoints.map((y) => (
-              <circle key={`${x}-${y}`} cx={PADDING + x * cellSize} cy={PADDING + y * cellSize} r={3.8} className="star-point" />
-            )))}
+            {columnNames.map((column, i) => (
+              <g key={`column-${column}`} className="coordinate-labels">
+                <text x={PADDING + i * cellSize} y={PADDING - 15}>{column}</text>
+                <text x={PADDING + i * cellSize} y={boardPixelSize - PADDING + 21}>{column}</text>
+              </g>
+            ))}
+            {Array.from({ length: boardSize }, (_, i) => (
+              <g key={`row-${i}`} className="coordinate-labels">
+                <text x={PADDING - 17} y={PADDING + i * cellSize + 3}>{boardSize - i}</text>
+                <text x={boardPixelSize - PADDING + 17} y={PADDING + i * cellSize + 3}>{boardSize - i}</text>
+              </g>
+            ))}
+            {starPoints.map(({ x, y }) => (
+              <circle key={`${x}-${y}`} cx={PADDING + x * cellSize} cy={PADDING + y * cellSize} r={Math.max(3.2, cellSize * .075)} className="star-point" />
+            ))}
+            {hoverPoint && board[hoverPoint.y]?.[hoverPoint.x] === null && (
+              <circle
+                cx={PADDING + hoverPoint.x * cellSize}
+                cy={PADDING + hoverPoint.y * cellSize}
+                r={cellSize * 0.455}
+                fill={userColor === 'B' ? 'url(#blackStone)' : 'url(#whiteStone)'}
+                className="ghost-stone"
+              />
+            )}
             {board.flatMap((row, y) => row.map((stone, x) => {
               if (!stone) return null;
               const last = history.at(-1);
               const isLast = last?.x === x && last?.y === y;
               return (
-                <g key={`${x}-${y}`}>
+                <g key={`${x}-${y}`} className={isLast ? 'stone-group latest' : 'stone-group'}>
                   <circle
                     cx={PADDING + x * cellSize}
                     cy={PADDING + y * cellSize}
-                    r={cellSize * 0.46}
+                    r={cellSize * 0.455}
                     fill={stone === 'B' ? 'url(#blackStone)' : 'url(#whiteStone)'}
                     filter="url(#stoneShadow)"
                     className={stone === 'B' ? 'black-stone' : 'white-stone'}
+                  />
+                  <ellipse
+                    cx={PADDING + x * cellSize - cellSize * .12}
+                    cy={PADDING + y * cellSize - cellSize * .17}
+                    rx={cellSize * .2}
+                    ry={cellSize * .1}
+                    fill="url(#stoneGlint)"
+                    className={stone === 'B' ? 'black-glint' : 'white-glint'}
                   />
                   {isLast && <circle cx={PADDING + x * cellSize} cy={PADDING + y * cellSize} r={Math.max(3, cellSize * 0.08)} className={stone === 'B' ? 'last-on-black' : 'last-on-white'} />}
                 </g>
               );
             }))}
           </svg>
+        </div>
+        <div className="board-meta" aria-hidden="true">
+          <span>天然木 질감</span><i />
+          <strong>{boardSize} × {boardSize}</strong>
+        </div>
         </div>
 
         <div className="side-column">

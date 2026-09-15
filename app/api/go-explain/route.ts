@@ -93,6 +93,13 @@ ${sgf}
   } catch (error: unknown) {
     console.error('Gemini API Error:', error);
     const message = error instanceof Error ? error.message : 'AI 인증 또는 통신 중 오류가 발생했습니다.';
+    const quotaExceeded = message.includes('429') || message.includes('RESOURCE_EXHAUSTED') || message.includes('Quota exceeded');
+    if (quotaExceeded) {
+      return NextResponse.json(
+        { error: 'Gemini 무료 사용량을 모두 사용했습니다. 잠시 후 다시 시도하거나 API 요금제를 확인해 주세요.', code: 'QUOTA_EXCEEDED' },
+        { status: 429 }
+      );
+    }
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

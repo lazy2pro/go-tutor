@@ -16,6 +16,18 @@ type TutorResult = {
   reason: string;
 };
 type SavedGame = { id: string; title: string; created_at: string };
+type TutorialLesson = {
+  id: number;
+  title: string;
+  shortTitle: string;
+  concept: string;
+  instruction: string;
+  successText: string;
+  initialStones: Move[];
+  targetPoints: Point[];
+  hintPoints: Point[];
+  player: Color;
+};
 
 const emptyBoard = (size: number): Stone[][] =>
   Array.from({ length: size }, () => Array<Stone>(size).fill(null));
@@ -37,7 +49,49 @@ const parseCoordinate = (coordinate: string, size: number): Point | null => {
   return x >= 0 && x < size && y >= 0 && y < size ? { x, y } : null;
 };
 
+const TUTORIAL_LESSONS: TutorialLesson[] = [
+  {
+    id: 1, shortTitle: '첫 착수', title: '교차점에 돌을 놓아요', concept: '바둑돌은 선 위가 아니라 선과 선이 만나는 교차점에 둡니다.',
+    instruction: '가운데의 E5 교차점을 눌러 흑돌을 놓아 보세요.', successText: '좋아요! 바둑은 이렇게 교차점에 돌을 놓으며 시작합니다.',
+    initialStones: [], targetPoints: [{ x: 4, y: 4 }], hintPoints: [{ x: 4, y: 4 }], player: 'B',
+  },
+  {
+    id: 2, shortTitle: '활로', title: '돌이 숨 쉴 곳, 활로', concept: '돌의 상하좌우에 있는 빈 교차점을 활로라고 합니다.',
+    instruction: '가운데 흑돌의 활로 중 하나에 흑돌을 놓아 연결해 보세요.', successText: '맞습니다. 빈 교차점이 있어 돌무리는 살아 있을 수 있습니다.',
+    initialStones: [{ x: 4, y: 4, color: 'B' }], targetPoints: [{ x: 4, y: 3 }, { x: 3, y: 4 }, { x: 5, y: 4 }, { x: 4, y: 5 }], hintPoints: [{ x: 4, y: 3 }, { x: 3, y: 4 }, { x: 5, y: 4 }, { x: 4, y: 5 }], player: 'B',
+  },
+  {
+    id: 3, shortTitle: '따내기', title: '활로를 모두 막으면 따낼 수 있어요', concept: '상대 돌의 활로를 모두 막으면 그 돌을 바둑판에서 걷어냅니다.',
+    instruction: '백 E5의 마지막 활로인 E6에 흑돌을 놓아 백돌을 따내 보세요.', successText: '따냈습니다! 상대 돌의 활로가 0개가 되면 돌이 바둑판에서 사라집니다.',
+    initialStones: [{ x: 4, y: 4, color: 'W' }, { x: 3, y: 4, color: 'B' }, { x: 5, y: 4, color: 'B' }, { x: 4, y: 5, color: 'B' }], targetPoints: [{ x: 4, y: 3 }], hintPoints: [{ x: 4, y: 3 }], player: 'B',
+  },
+  {
+    id: 4, shortTitle: '연결', title: '내 돌을 단단히 연결해요', concept: '상하좌우로 맞닿은 같은 색 돌은 하나의 돌무리로 연결됩니다.',
+    instruction: '떨어진 두 흑돌 사이 E5에 흑돌을 놓아 연결해 보세요.', successText: '연결 성공! 이제 두 돌은 활로를 함께 쓰는 하나의 돌무리입니다.',
+    initialStones: [{ x: 3, y: 4, color: 'B' }, { x: 5, y: 4, color: 'B' }], targetPoints: [{ x: 4, y: 4 }], hintPoints: [{ x: 4, y: 4 }], player: 'B',
+  },
+  {
+    id: 5, shortTitle: '탈출', title: '단수에 걸린 돌을 살려요', concept: '활로가 하나만 남은 상태를 단수라고 합니다.',
+    instruction: '단수에 걸린 흑돌을 살릴 수 있는 E6에 흑돌을 놓아 보세요.', successText: '잘 살렸어요! 단수일 때는 먼저 활로를 늘릴 수 있는지 찾아보세요.',
+    initialStones: [{ x: 4, y: 4, color: 'B' }, { x: 3, y: 4, color: 'W' }, { x: 5, y: 4, color: 'W' }, { x: 4, y: 5, color: 'W' }], targetPoints: [{ x: 4, y: 3 }], hintPoints: [{ x: 4, y: 3 }], player: 'B',
+  },
+  {
+    id: 6, shortTitle: '집', title: '돌로 빈 공간을 감싸요', concept: '내 돌로 둘러싼 빈 공간은 대국이 끝났을 때 집이 됩니다.',
+    instruction: '흑돌로 둘러싸인 빈칸 E5에 놓아 공간을 완성해 보세요.', successText: '좋습니다. 이렇게 돌로 공간을 확보하는 것이 바둑의 목표입니다.',
+    initialStones: [{ x: 4, y: 3, color: 'B' }, { x: 3, y: 4, color: 'B' }, { x: 5, y: 4, color: 'B' }, { x: 4, y: 5, color: 'B' }], targetPoints: [{ x: 4, y: 4 }], hintPoints: [{ x: 4, y: 4 }], player: 'B',
+  },
+  {
+    id: 7, shortTitle: '패', title: '같은 모양을 바로 되풀이할 수 없어요', concept: '방금 잡힌 자리를 곧바로 되따내어 같은 판을 반복하는 것은 패 규칙으로 막습니다.',
+    instruction: 'E6에 흑돌을 놓아 백돌을 잡아 보세요. 실제 대국에서는 바로 되따낼 수 없습니다.', successText: '좋아요. 방금 생긴 모양을 즉시 되풀이하지 못하게 하는 것이 패 규칙입니다.',
+    initialStones: [{ x: 4, y: 4, color: 'W' }, { x: 3, y: 4, color: 'B' }, { x: 5, y: 4, color: 'B' }, { x: 4, y: 5, color: 'B' }], targetPoints: [{ x: 4, y: 3 }], hintPoints: [{ x: 4, y: 3 }], player: 'B',
+  },
+];
+
 export default function Home() {
+  const [appMode, setAppMode] = useState<'learn' | 'play'>('learn');
+  const [activeLessonId, setActiveLessonId] = useState<number | null>(null);
+  const [lessonComplete, setLessonComplete] = useState(false);
+  const [lessonFeedback, setLessonFeedback] = useState('');
   const [boardSize, setBoardSize] = useState(9);
   const [level, setLevel] = useState('입문자');
   const [analysisInterval, setAnalysisInterval] = useState<1 | 2 | 3>(2);
@@ -57,6 +111,11 @@ export default function Home() {
   const [hoverPoint, setHoverPoint] = useState<Point | null>(null);
   const aiRequestRef = useRef<AbortController | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+
+  const activeLesson = useMemo(
+    () => TUTORIAL_LESSONS.find((lesson) => lesson.id === activeLessonId) ?? null,
+    [activeLessonId],
+  );
 
   const cellSize = Math.floor((BOARD_PIXEL_MAX - PADDING * 2) / (boardSize - 1));
   const boardPixelSize = (boardSize - 1) * cellSize + PADDING * 2;
@@ -264,6 +323,28 @@ export default function Home() {
     return `(;GM[1]FF[4]SZ[${boardSize}]KM[6.5]RU[Japanese]${nodes})`;
   }, [boardSize, history]);
 
+  const startLesson = (lesson: TutorialLesson) => {
+    if (soundEnabled) void ensureAudio();
+    aiRequestRef.current?.abort();
+    const lessonBoard = emptyBoard(9);
+    lesson.initialStones.forEach((stone) => { lessonBoard[stone.y][stone.x] = stone.color; });
+    setAppMode('learn');
+    setBoardSize(9);
+    setUserColor(lesson.player);
+    setBoard(lessonBoard);
+    setHistory(lesson.initialStones);
+    setPositionHistory([serializeBoard(lessonBoard)]);
+    setCapturedB(0);
+    setCapturedW(0);
+    setGeminiCalls(0);
+    setAiExplanation(`${lesson.title}\n${lesson.concept}\n\n${lesson.instruction}`);
+    setLessonFeedback('');
+    setLessonComplete(false);
+    setActiveLessonId(lesson.id);
+    setIsAiThinking(false);
+    setGameStarted(true);
+  };
+
   const startGame = () => {
     if (soundEnabled) void ensureAudio();
     aiRequestRef.current?.abort();
@@ -274,6 +355,10 @@ export default function Home() {
     setCapturedB(0);
     setCapturedW(0);
     setGeminiCalls(0);
+    setAppMode('play');
+    setActiveLessonId(null);
+    setLessonComplete(false);
+    setLessonFeedback('');
     setAiExplanation('바둑판의 교차점을 눌러 착수하세요. AI는 응수와 네 가지 짧은 강평을 함께 제공합니다.');
     setIsAiThinking(false);
     setGameStarted(true);
@@ -283,6 +368,8 @@ export default function Home() {
     aiRequestRef.current?.abort();
     setIsAiThinking(false);
     setGameStarted(false);
+    setActiveLessonId(null);
+    setLessonComplete(false);
   };
 
   const applyAiMove = useCallback((
@@ -394,13 +481,13 @@ export default function Home() {
   }, [applyAiMove, boardSize, generateSgf, getValidMoves, level, playLocalAiMove, userColor]);
 
   useEffect(() => {
-    if (gameStarted && userColor === 'W' && history.length === 0 && board.length === boardSize && !isAiThinking) {
+    if (gameStarted && !activeLesson && userColor === 'W' && history.length === 0 && board.length === boardSize && !isAiThinking) {
       const timer = window.setTimeout(() => {
         void triggerAiMove(board, history, positionHistory, '');
       }, 0);
       return () => window.clearTimeout(timer);
     }
-  }, [board, boardSize, gameStarted, history, isAiThinking, positionHistory, triggerAiMove, userColor]);
+  }, [activeLesson, board, boardSize, gameStarted, history, isAiThinking, positionHistory, triggerAiMove, userColor]);
 
   useEffect(() => () => {
     aiRequestRef.current?.abort();
@@ -409,8 +496,10 @@ export default function Home() {
 
   const handleBoardPointer = (event: React.PointerEvent<SVGSVGElement>) => {
     if (!gameStarted || isAiThinking) return;
-    const currentTurn: Color = history.length % 2 === 0 ? 'B' : 'W';
-    if (currentTurn !== userColor) return;
+    if (!activeLesson) {
+      const currentTurn: Color = history.length % 2 === 0 ? 'B' : 'W';
+      if (currentTurn !== userColor) return;
+    }
 
     const rect = event.currentTarget.getBoundingClientRect();
     const svgX = (event.clientX - rect.left) * (boardPixelSize / rect.width);
@@ -418,6 +507,31 @@ export default function Home() {
     const x = Math.round((svgX - PADDING) / cellSize);
     const y = Math.round((svgY - PADDING) / cellSize);
     if (x < 0 || x >= boardSize || y < 0 || y >= boardSize) return;
+
+    if (activeLesson) {
+      if (lessonComplete) return;
+      const isTarget = activeLesson.targetPoints.some((point) => point.x === x && point.y === y);
+      if (!isTarget) {
+        setLessonFeedback(`여기는 이번 연습의 답이 아닙니다. ${activeLesson.instruction}`);
+        return;
+      }
+      const lessonMove = playMove(board, x, y, activeLesson.player);
+      if (!lessonMove) {
+        setLessonFeedback('이 자리는 지금 둘 수 없습니다. 파란색으로 표시된 교차점을 다시 확인해 보세요.');
+        return;
+      }
+      const nextHistory = [...history, { x, y, color: activeLesson.player }];
+      setBoard(lessonMove.newBoard);
+      setHistory(nextHistory);
+      setPositionHistory([serializeBoard(lessonMove.newBoard)]);
+      void playStoneSound();
+      if (activeLesson.player === 'B') setCapturedW((value) => value + lessonMove.capturedCount);
+      else setCapturedB((value) => value + lessonMove.capturedCount);
+      setLessonComplete(true);
+      setLessonFeedback('');
+      setAiExplanation(`완료 · ${activeLesson.shortTitle}\n\n${activeLesson.successText}`);
+      return;
+    }
 
     const move = playMove(board, x, y, userColor);
     if (!move) return window.alert('이미 돌이 있거나 자충수인 자리입니다.');
@@ -461,7 +575,8 @@ export default function Home() {
     const y = Math.round((svgY - PADDING) / cellSize);
     const nearIntersection = Math.abs(svgX - (PADDING + x * cellSize)) < cellSize * 0.48
       && Math.abs(svgY - (PADDING + y * cellSize)) < cellSize * 0.48;
-    if (nearIntersection && x >= 0 && x < boardSize && y >= 0 && y < boardSize && board[y]?.[x] === null) {
+    const isLessonTarget = !activeLesson || activeLesson.targetPoints.some((point) => point.x === x && point.y === y);
+    if (nearIntersection && isLessonTarget && x >= 0 && x < boardSize && y >= 0 && y < boardSize && board[y]?.[x] === null) {
       setHoverPoint({ x, y });
     } else {
       setHoverPoint(null);
@@ -509,7 +624,7 @@ export default function Home() {
   };
 
   const isUserTurn = gameStarted && !isAiThinking &&
-    ((history.length % 2 === 0 && userColor === 'B') || (history.length % 2 === 1 && userColor === 'W'));
+    (activeLesson ? !lessonComplete : ((history.length % 2 === 0 && userColor === 'B') || (history.length % 2 === 1 && userColor === 'W')));
   const lastMove = history.at(-1);
 
   return (
@@ -526,7 +641,60 @@ export default function Home() {
         <span className="header-badge"><i /> {gameStarted ? '대국 진행 중' : '연습 준비'}</span>
       </header>
 
-      <section className="control-card" aria-label="대국 설정">
+      <nav className="mode-switch" aria-label="학습 모드 선택">
+        <button className={appMode === 'learn' ? 'selected' : ''} onClick={() => { stopGame(); setAppMode('learn'); }}>처음 배우기</button>
+        <button className={appMode === 'play' ? 'selected' : ''} onClick={() => { stopGame(); setAppMode('play'); }}>자유 대국</button>
+      </nav>
+
+      {appMode === 'learn' && !gameStarted ? (
+        <section className="lesson-home" aria-label="바둑 기초 튜토리얼">
+          <div className="lesson-home-intro">
+            <p className="eyebrow">STEP BY STEP</p>
+            <h2>규칙을 알기 전에,<br />직접 한 수씩 둬보세요.</h2>
+            <p>설명을 읽고 파란 점을 한 번 누르면 다음 단계로 갑니다. 튜토리얼에서는 AI 응수나 Gemini 호출이 없습니다.</p>
+            <div className="lesson-progress"><b>0</b><span>/ {TUTORIAL_LESSONS.length + 1} 단계 완료</span></div>
+          </div>
+          <div className="lesson-grid">
+            {TUTORIAL_LESSONS.map((lesson) => (
+              <button className="lesson-card" key={lesson.id} onClick={() => startLesson(lesson)}>
+                <span className="lesson-number">{String(lesson.id).padStart(2, '0')}</span>
+                <strong>{lesson.shortTitle}</strong>
+                <small>{lesson.title}</small>
+                <i>시작하기 →</i>
+              </button>
+            ))}
+            <button className="lesson-card final-lesson" onClick={() => { setAppMode('play'); setBoardSize(9); setLevel('입문자'); setUserColor('B'); }}>
+              <span className="lesson-number">08</span>
+              <strong>첫 대국</strong>
+              <small>배운 규칙으로 9×9를 시작해요</small>
+              <i>대국 준비 →</i>
+            </button>
+          </div>
+        </section>
+      ) : (
+        <>
+
+      <section className="control-card" aria-label={activeLesson ? '튜토리얼 진행' : '대국 설정'}>
+        {activeLesson ? (
+          <div className="lesson-control" aria-live="polite">
+            <div><span className="lesson-kicker">LESSON {String(activeLesson.id).padStart(2, '0')} / {TUTORIAL_LESSONS.length}</span><h2>{activeLesson.title}</h2></div>
+            <p>{lessonComplete ? activeLesson.successText : activeLesson.instruction}</p>
+            {lessonFeedback && <p className="lesson-feedback">{lessonFeedback}</p>}
+            <div className="lesson-actions">
+              {lessonComplete && activeLesson.id < TUTORIAL_LESSONS.length && (
+                <button className="button primary" onClick={() => startLesson(TUTORIAL_LESSONS[activeLesson.id])}>다음 단계</button>
+              )}
+              {lessonComplete && activeLesson.id === TUTORIAL_LESSONS.length && (
+                <button className="button primary" onClick={() => { stopGame(); setAppMode('play'); setBoardSize(9); setLevel('입문자'); setUserColor('B'); }}>9 × 9 첫 대국 준비</button>
+              )}
+              <button className="button secondary" onClick={stopGame}>목록으로</button>
+              <button className="button sound" aria-pressed={soundEnabled} onClick={() => { setSoundEnabled((enabled) => !enabled); if (!soundEnabled) void ensureAudio(); }}>
+                {soundEnabled ? '🔊 착수음' : '🔇 음소거'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
         <div className="settings-grid">
           <label><span>바둑판</span>
             <select value={boardSize} disabled={gameStarted} onChange={(event) => setBoardSize(Number(event.target.value))}>
@@ -581,6 +749,8 @@ export default function Home() {
               <span>이번 대국 Gemini 호출 {geminiCalls}회</span>
             </div>
           </div>
+        )}
+          </>
         )}
       </section>
 
@@ -667,6 +837,12 @@ export default function Home() {
             {starPoints.map(({ x, y }) => (
               <circle key={`${x}-${y}`} cx={PADDING + x * cellSize} cy={PADDING + y * cellSize} r={Math.max(3.2, cellSize * .075)} className="star-point" />
             ))}
+            {activeLesson && !lessonComplete && activeLesson.hintPoints.map(({ x, y }) => (
+              <g key={`hint-${x}-${y}`} className="tutorial-target" aria-hidden="true">
+                <circle cx={PADDING + x * cellSize} cy={PADDING + y * cellSize} r={cellSize * .22} />
+                <circle cx={PADDING + x * cellSize} cy={PADDING + y * cellSize} r={cellSize * .085} />
+              </g>
+            ))}
             {hoverPoint && board[hoverPoint.y]?.[hoverPoint.x] === null && (
               <circle
                 cx={PADDING + hoverPoint.x * cellSize}
@@ -712,7 +888,7 @@ export default function Home() {
 
         <div className="side-column">
           <article className="analysis-card" aria-live="polite">
-            <div className="card-heading"><span>AI</span><h2>실시간 강평</h2></div>
+            <div className="card-heading"><span>{activeLesson ? String(activeLesson.id).padStart(2, '0') : 'AI'}</span><h2>{activeLesson ? '이번 단계 안내' : '실시간 강평'}</h2></div>
             {!gameStarted
               ? <p className="muted">설정을 고른 뒤 대국을 시작하세요.</p>
               : isAiThinking
@@ -720,13 +896,17 @@ export default function Home() {
                 : <div className="analysis-text">{aiExplanation}</div>}
           </article>
           <article className="archive-card">
-            <div className="card-heading"><span>棋</span><h2>저장한 기보</h2></div>
-            {games.length === 0
-              ? <p className="muted">저장된 기보가 없습니다.</p>
-              : <ul>{games.map((game) => <li key={game.id}><strong>{game.title}</strong><small>{new Date(game.created_at).toLocaleDateString()}</small></li>)}</ul>}
+            <div className="card-heading"><span>{activeLesson ? 'TIP' : '棋'}</span><h2>{activeLesson ? '기억할 점' : '저장한 기보'}</h2></div>
+            {activeLesson
+              ? <p className="muted">{activeLesson.concept}</p>
+              : games.length === 0
+                ? <p className="muted">저장된 기보가 없습니다.</p>
+                : <ul>{games.map((game) => <li key={game.id}><strong>{game.title}</strong><small>{new Date(game.created_at).toLocaleDateString()}</small></li>)}</ul>}
           </article>
         </div>
       </section>
+        </>
+      )}
     </main>
   );
 }

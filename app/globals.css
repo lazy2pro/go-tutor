@@ -76,6 +76,37 @@ h1 { margin: 0; font-size: clamp(28px, 3.8vw, 41px); line-height: 1; letter-spac
 }
 .header-badge i { width: 7px; height: 7px; border-radius: 50%; background: #37a26d; box-shadow: 0 0 0 4px rgba(55,162,109,.12); }
 
+.mode-switch { display: inline-flex; gap: 4px; margin: 0 0 18px; padding: 4px; border: 1px solid rgba(38,67,52,.12); border-radius: 13px; background: rgba(255,255,255,.56); }
+.mode-switch button { min-height: 34px; padding: 0 13px; border: 0; border-radius: 9px; background: transparent; color: #66716a; font-size: 12px; font-weight: 780; cursor: pointer; }
+.mode-switch button.selected { background: #173d2e; color: #fff; box-shadow: 0 4px 10px rgba(15,50,35,.16); }
+.lesson-home { display: grid; grid-template-columns: minmax(235px, .75fr) minmax(0, 1.65fr); gap: 18px; align-items: stretch; }
+.lesson-home-intro { padding: 29px; border: 1px solid rgba(30,71,51,.14); border-radius: 22px; color: #f9faf7; background: radial-gradient(circle at 100% 0%, rgba(113,174,137,.25), transparent 42%), linear-gradient(145deg, #214d39, #0c2d20); box-shadow: 0 20px 36px rgba(14,50,35,.18); }
+.lesson-home-intro .eyebrow { color: #d8b76f; }
+.lesson-home-intro h2 { margin: 0; font-size: clamp(25px, 3vw, 34px); line-height: 1.16; letter-spacing: -.05em; }
+.lesson-home-intro > p:not(.eyebrow) { margin: 17px 0 0; color: #d0dfd5; font-size: 13px; line-height: 1.75; }
+.lesson-progress { display: flex; align-items: baseline; gap: 7px; margin-top: 30px; padding-top: 16px; border-top: 1px solid rgba(232,248,237,.16); color: #b8d0c0; font-size: 12px; }
+.lesson-progress b { color: #f0c56f; font-size: 26px; line-height: 1; }
+.lesson-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.lesson-card { position: relative; display: flex; min-height: 126px; flex-direction: column; align-items: flex-start; padding: 17px; border: 1px solid rgba(32,67,50,.13); border-radius: 18px; background: rgba(255,255,255,.76); color: var(--ink); text-align: left; cursor: pointer; overflow: hidden; box-shadow: 0 9px 21px rgba(25,48,36,.055); transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+.lesson-card:hover { transform: translateY(-2px); border-color: rgba(34,106,73,.36); box-shadow: 0 13px 25px rgba(25,48,36,.1); }
+.lesson-number { color: #aa7a2d; font-size: 10px; font-weight: 850; letter-spacing: .12em; }
+.lesson-card strong { margin-top: 10px; font-size: 17px; letter-spacing: -.04em; }
+.lesson-card small { margin-top: 5px; color: #778078; font-size: 11px; line-height: 1.45; }
+.lesson-card i { margin-top: auto; padding-top: 11px; color: #236146; font-size: 11px; font-style: normal; font-weight: 800; }
+.lesson-card::after { position: absolute; right: -21px; bottom: -25px; width: 80px; height: 80px; border: 12px solid rgba(29,91,64,.07); border-radius: 50%; content: ""; }
+.final-lesson { background: linear-gradient(145deg, #f6e7c7, #f3ce89); }
+.lesson-control { display: grid; grid-template-columns: auto 1fr; column-gap: 26px; align-items: center; }
+.lesson-kicker { display: block; margin-bottom: 6px; color: #9a722f; font-size: 10px; font-weight: 850; letter-spacing: .14em; }
+.lesson-control h2 { margin: 0; font-size: 21px; letter-spacing: -.04em; }
+.lesson-control > p { margin: 0; color: #56645b; font-size: 13px; line-height: 1.65; }
+.lesson-feedback { grid-column: 1 / -1; margin-top: 12px !important; padding: 10px 12px; border-radius: 10px; background: #fff0e2; color: #934a19 !important; }
+.lesson-actions { display: flex; grid-column: 1 / -1; gap: 9px; margin-top: 15px; }
+.lesson-actions .button.sound { margin-left: auto; }
+.tutorial-target { pointer-events: none; }
+.tutorial-target circle:first-child { fill: rgba(45,144,207,.14); stroke: #2c93cc; stroke-width: 1.4; vector-effect: non-scaling-stroke; animation: lessonPulse 1.5s ease-in-out infinite; }
+.tutorial-target circle:last-child { fill: #258ccc; }
+@keyframes lessonPulse { 50% { transform: scale(1.2); opacity: .56; } }
+
 .control-card, .analysis-card, .archive-card {
   border: 1px solid rgba(38, 67, 52, .12);
   background: rgba(255,255,255,.74);
@@ -172,6 +203,7 @@ select:focus { border-color: #4e886c; box-shadow: 0 0 0 4px rgba(42,114,78,.11);
 
 @media (max-width: 930px) {
   .app-shell { max-width: 720px; }
+  .lesson-home { grid-template-columns: 1fr; }
   .game-layout { grid-template-columns: 1fr; gap: 20px; }
   .board-card { max-width: 680px; margin: 0 auto; }
   .analysis-card { min-height: 230px; }
@@ -187,6 +219,20 @@ select:focus { border-color: #4e886c; box-shadow: 0 0 0 4px rgba(42,114,78,.11);
   .brand-mark i:last-child { right: 7px; }
   .header-copy { display: none; }
   .header-badge { padding: 7px 9px; font-size: 10px; }
+  .mode-switch { margin-bottom: 13px; }
+  .lesson-home { gap: 13px; }
+  .lesson-home-intro { padding: 21px; border-radius: 18px; }
+  .lesson-home-intro h2 { font-size: 27px; }
+  .lesson-progress { margin-top: 20px; }
+  .lesson-grid { gap: 8px; }
+  .lesson-card { min-height: 118px; padding: 14px; border-radius: 15px; }
+  .lesson-card strong { margin-top: 8px; font-size: 15px; }
+  .lesson-card small { font-size: 10px; }
+  .lesson-control { display: block; }
+  .lesson-control > p { margin-top: 11px; }
+  .lesson-actions { flex-wrap: wrap; }
+  .lesson-actions .button { flex: 1; }
+  .lesson-actions .button.sound { margin-left: 0; flex-basis: 100%; }
   .control-card { padding: 13px; border-radius: 17px; margin-bottom: 17px; }
   .settings-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
   select { min-height: 44px; padding-left: 10px; font-size: 13px; }
@@ -209,4 +255,5 @@ select:focus { border-color: #4e886c; box-shadow: 0 0 0 4px rgba(42,114,78,.11);
   .thinking i { animation-duration: 1.5s; }
   .stone-group.latest { animation: none; }
   .button { transition: none; }
+  .tutorial-target circle:first-child { animation: none; }
 }

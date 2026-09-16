@@ -28,6 +28,14 @@ type TutorialLesson = {
   hintPoints: Point[];
   player: Color;
 };
+type TutorialCourse = {
+  id: 'beginner' | 'elementary' | 'intermediate' | 'advanced';
+  label: string;
+  title: string;
+  description: string;
+  boardSize: 9 | 13 | 19;
+  lessons: TutorialLesson[];
+};
 
 const emptyBoard = (size: number): Stone[][] =>
   Array.from({ length: size }, () => Array<Stone>(size).fill(null));
@@ -49,7 +57,7 @@ const parseCoordinate = (coordinate: string, size: number): Point | null => {
   return x >= 0 && x < size && y >= 0 && y < size ? { x, y } : null;
 };
 
-const TUTORIAL_LESSONS: TutorialLesson[] = [
+const BEGINNER_LESSONS: TutorialLesson[] = [
   {
     id: 1, shortTitle: '첫 착수', title: '교차점에 돌을 놓아요', concept: '바둑돌은 선 위가 아니라 선과 선이 만나는 교차점에 둡니다.',
     instruction: '가운데의 E5 교차점을 눌러 흑돌을 놓아 보세요.', successText: '좋아요! 바둑은 이렇게 교차점에 돌을 놓으며 시작합니다.',
@@ -87,11 +95,89 @@ const TUTORIAL_LESSONS: TutorialLesson[] = [
   },
 ];
 
+const ELEMENTARY_LESSONS: TutorialLesson[] = [
+  {
+    id: 1, shortTitle: '단수 만들기', title: '상대 돌의 활로를 하나로 줄여요', concept: '상대 돌의 남은 활로가 하나가 되면 다음 수에 따낼 위협이 생깁니다.',
+    instruction: '백 E5의 활로를 하나만 남기도록 E4에 흑돌을 놓아 보세요.', successText: '좋습니다. 백돌은 이제 E6 한 곳만 남아 단수입니다.',
+    initialStones: [{ x: 4, y: 4, color: 'W' }, { x: 3, y: 4, color: 'B' }, { x: 5, y: 4, color: 'B' }], targetPoints: [{ x: 4, y: 5 }], hintPoints: [{ x: 4, y: 5 }], player: 'B',
+  },
+  {
+    id: 2, shortTitle: '한 칸 뜀', title: '돌을 너무 붙이지 않고 전진해요', concept: '한 칸 뜀은 돌 사이에 한 칸을 두고 넓게 전진하는 기본 모양입니다.',
+    instruction: 'D5의 흑돌에서 한 칸 뛰는 F5에 흑돌을 놓아 보세요.', successText: '좋아요. 너무 붙지 않고도 돌의 세력을 넓힐 수 있습니다.',
+    initialStones: [{ x: 3, y: 4, color: 'B' }], targetPoints: [{ x: 5, y: 4 }], hintPoints: [{ x: 5, y: 4 }], player: 'B',
+  },
+  {
+    id: 3, shortTitle: '모서리', title: '모서리는 적은 돌로 감싸기 쉬워요', concept: '바둑판의 가장자리는 바깥쪽을 이미 판이 막아주므로 공간을 만들기 좋습니다.',
+    instruction: '좌상귀의 C7에 흑돌을 놓아 모서리에서 시작해 보세요.', successText: '좋습니다. 초반에는 모서리부터 공간을 확보하는 생각을 할 수 있습니다.',
+    initialStones: [], targetPoints: [{ x: 2, y: 2 }], hintPoints: [{ x: 2, y: 2 }], player: 'B',
+  },
+  {
+    id: 4, shortTitle: '지키기', title: '약한 돌을 먼저 안정시켜요', concept: '상대에게 둘러싸인 돌은 공격보다 활로를 늘려 안전하게 만드는 편이 좋습니다.',
+    instruction: '단수인 E5 흑돌을 살리는 E6에 흑돌을 놓아 보세요.', successText: '정확합니다. 위험한 돌을 먼저 지키면 이후에 더 편하게 둘 수 있습니다.',
+    initialStones: [{ x: 4, y: 4, color: 'B' }, { x: 3, y: 4, color: 'W' }, { x: 5, y: 4, color: 'W' }, { x: 4, y: 5, color: 'W' }], targetPoints: [{ x: 4, y: 3 }], hintPoints: [{ x: 4, y: 3 }], player: 'B',
+  },
+];
+
+const INTERMEDIATE_LESSONS: TutorialLesson[] = [
+  {
+    id: 1, shortTitle: '끊기', title: '상대의 연결을 약하게 만들어요', concept: '상대 돌 사이의 빈 교차점에 두면 연결을 방해할 수 있습니다.',
+    instruction: '백 D5와 F5 사이의 E5에 흑돌을 놓아 연결을 막아 보세요.', successText: '좋습니다. 상대 돌이 한 덩어리가 되지 못하게 하는 것이 끊기입니다.',
+    initialStones: [{ x: 3, y: 4, color: 'W' }, { x: 5, y: 4, color: 'W' }], targetPoints: [{ x: 4, y: 4 }], hintPoints: [{ x: 4, y: 4 }], player: 'B',
+  },
+  {
+    id: 2, shortTitle: '두 눈', title: '살아 있는 돌의 모양을 만들어요', concept: '상대가 모두 막을 수 없는 두 개의 빈 공간이 있으면 돌무리는 보통 살아 있습니다.',
+    instruction: '흑돌 사이의 E5를 메워 첫 번째 눈 모양을 완성해 보세요.', successText: '좋아요. 실제 사활에서는 눈이 몇 개인지와 상대가 막을 수 있는지를 함께 살펴야 합니다.',
+    initialStones: [{ x: 4, y: 3, color: 'B' }, { x: 3, y: 4, color: 'B' }, { x: 5, y: 4, color: 'B' }, { x: 4, y: 5, color: 'B' }], targetPoints: [{ x: 4, y: 4 }], hintPoints: [{ x: 4, y: 4 }], player: 'B',
+  },
+  {
+    id: 3, shortTitle: '선수', title: '상대가 답해야 하는 수를 찾아요', concept: '상대가 대응하지 않으면 돌을 잃는 수는 주도권을 잡는 데 도움이 됩니다.',
+    instruction: '백 E5를 바로 잡는 E6에 흑돌을 놓아 보세요.', successText: '따내는 수는 상대가 반드시 확인해야 하는 강한 위협이 될 수 있습니다.',
+    initialStones: [{ x: 4, y: 4, color: 'W' }, { x: 3, y: 4, color: 'B' }, { x: 5, y: 4, color: 'B' }, { x: 4, y: 5, color: 'B' }], targetPoints: [{ x: 4, y: 3 }], hintPoints: [{ x: 4, y: 3 }], player: 'B',
+  },
+  {
+    id: 4, shortTitle: '끝내기', title: '경계 한 칸도 점수가 됩니다', concept: '전투가 잦아든 뒤에는 내 집을 넓히고 상대 집을 줄이는 작은 수가 중요합니다.',
+    instruction: '아래쪽 경계를 넓히는 E3에 흑돌을 놓아 보세요.', successText: '좋습니다. 작은 한 칸도 대국 막바지에는 승패를 바꿀 수 있습니다.',
+    initialStones: [{ x: 3, y: 6, color: 'B' }, { x: 4, y: 6, color: 'B' }, { x: 5, y: 6, color: 'B' }], targetPoints: [{ x: 4, y: 6 - 1 }], hintPoints: [{ x: 4, y: 5 }], player: 'B',
+  },
+];
+
+const ADVANCED_LESSONS: TutorialLesson[] = [
+  {
+    id: 1, shortTitle: '수상전', title: '서로의 활로 수를 비교해요', concept: '서로 잡으려는 돌무리에서는 누가 더 많은 활로를 남겼는지 먼저 세어야 합니다.',
+    instruction: '백 E5의 마지막 활로 E6을 막아 수상전을 끝내 보세요.', successText: '좋습니다. 수상전은 감으로 두기보다 양쪽 활로를 세는 것이 먼저입니다.',
+    initialStones: [{ x: 4, y: 4, color: 'W' }, { x: 3, y: 4, color: 'B' }, { x: 5, y: 4, color: 'B' }, { x: 4, y: 5, color: 'B' }], targetPoints: [{ x: 4, y: 3 }], hintPoints: [{ x: 4, y: 3 }], player: 'B',
+  },
+  {
+    id: 2, shortTitle: '패싸움', title: '패를 활용할 때는 큰 위협이 필요해요', concept: '패를 다시 따내기 전에 상대가 응답해야 할 충분히 큰 위협을 만드는 것이 핵심입니다.',
+    instruction: '우선 백돌을 잡는 E6에 흑돌을 놓아 패의 출발 모양을 확인해 보세요.', successText: '이제 백이 즉시 되따낼 수 없는 패 규칙을 떠올려 보세요.',
+    initialStones: [{ x: 4, y: 4, color: 'W' }, { x: 3, y: 4, color: 'B' }, { x: 5, y: 4, color: 'B' }, { x: 4, y: 5, color: 'B' }], targetPoints: [{ x: 4, y: 3 }], hintPoints: [{ x: 4, y: 3 }], player: 'B',
+  },
+  {
+    id: 3, shortTitle: '방향', title: '강한 돌보다는 약한 돌을 향해요', concept: '상대의 이미 단단한 돌을 더 강하게 만들기보다 약한 돌을 압박하는 방향을 찾습니다.',
+    instruction: '좌측의 약한 백돌 쪽 D5에 흑돌을 놓아 압박해 보세요.', successText: '좋습니다. 수의 방향은 돌 하나보다 전체 돌무리의 강약을 보고 정합니다.',
+    initialStones: [{ x: 2, y: 4, color: 'W' }, { x: 6, y: 4, color: 'W' }, { x: 7, y: 4, color: 'W' }, { x: 6, y: 5, color: 'W' }], targetPoints: [{ x: 3, y: 4 }], hintPoints: [{ x: 3, y: 4 }], player: 'B',
+  },
+  {
+    id: 4, shortTitle: '형세 판단', title: '판 전체를 보고 큰 곳을 찾습니다', concept: '한 곳의 싸움에만 몰입하지 않고, 아직 아무도 차지하지 않은 넓은 곳을 함께 봅니다.',
+    instruction: '가장 넓게 남은 중앙 E5에 흑돌을 놓아 큰 곳을 선점해 보세요.', successText: '좋습니다. 다음 수를 고를 때는 국지전뿐 아니라 판 전체의 빈 공간도 비교해 보세요.',
+    initialStones: [{ x: 1, y: 1, color: 'B' }, { x: 7, y: 1, color: 'W' }, { x: 1, y: 7, color: 'W' }, { x: 7, y: 7, color: 'B' }], targetPoints: [{ x: 4, y: 4 }], hintPoints: [{ x: 4, y: 4 }], player: 'B',
+  },
+];
+
+const TUTORIAL_COURSES: TutorialCourse[] = [
+  { id: 'beginner', label: '입문', title: '바둑의 규칙부터 시작하기', description: '돌 놓기와 활로, 따내기처럼 반드시 알아야 할 기본 규칙을 배웁니다.', boardSize: 9, lessons: BEGINNER_LESSONS },
+  { id: 'elementary', label: '초급', title: '돌을 살리고 넓히기', description: '단수, 모서리, 한 칸 뜀처럼 처음 대국에서 바로 쓰는 모양을 익힙니다.', boardSize: 9, lessons: ELEMENTARY_LESSONS },
+  { id: 'intermediate', label: '중급', title: '싸움과 끝내기의 균형', description: '끊기, 선수, 사활의 기초와 끝내기 판단을 문제로 연습합니다.', boardSize: 9, lessons: INTERMEDIATE_LESSONS },
+  { id: 'advanced', label: '고급', title: '전체 판을 읽는 연습', description: '수상전, 패, 수의 방향과 형세 판단을 단계적으로 확인합니다.', boardSize: 9, lessons: ADVANCED_LESSONS },
+];
+
 export default function Home() {
   const [appMode, setAppMode] = useState<'learn' | 'play'>('learn');
+  const [selectedCourseId, setSelectedCourseId] = useState<TutorialCourse['id']>('beginner');
   const [activeLessonId, setActiveLessonId] = useState<number | null>(null);
   const [lessonComplete, setLessonComplete] = useState(false);
   const [lessonFeedback, setLessonFeedback] = useState('');
+  const [completedLessonKeys, setCompletedLessonKeys] = useState<string[]>([]);
   const [boardSize, setBoardSize] = useState(9);
   const [level, setLevel] = useState('입문자');
   const [analysisInterval, setAnalysisInterval] = useState<1 | 2 | 3>(2);
@@ -112,10 +198,32 @@ export default function Home() {
   const aiRequestRef = useRef<AbortController | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
-  const activeLesson = useMemo(
-    () => TUTORIAL_LESSONS.find((lesson) => lesson.id === activeLessonId) ?? null,
-    [activeLessonId],
+  const selectedCourse = useMemo(
+    () => TUTORIAL_COURSES.find((course) => course.id === selectedCourseId) ?? TUTORIAL_COURSES[0],
+    [selectedCourseId],
   );
+  const activeLesson = useMemo(
+    () => selectedCourse.lessons.find((lesson) => lesson.id === activeLessonId) ?? null,
+    [activeLessonId, selectedCourse],
+  );
+  const completedCourseCount = completedLessonKeys.filter((key) => key.startsWith(`${selectedCourseId}-`)).length;
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem('go-tutor-completed-lessons');
+      if (saved) setCompletedLessonKeys(JSON.parse(saved) as string[]);
+    } catch {
+      // 학습 진행 저장이 불가능한 환경에서도 튜토리얼은 정상적으로 진행한다.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('go-tutor-completed-lessons', JSON.stringify(completedLessonKeys));
+    } catch {
+      // 저장 권한이 없으면 현재 화면의 진행 상태만 유지한다.
+    }
+  }, [completedLessonKeys]);
 
   const cellSize = Math.floor((BOARD_PIXEL_MAX - PADDING * 2) / (boardSize - 1));
   const boardPixelSize = (boardSize - 1) * cellSize + PADDING * 2;
@@ -326,10 +434,10 @@ export default function Home() {
   const startLesson = (lesson: TutorialLesson) => {
     if (soundEnabled) void ensureAudio();
     aiRequestRef.current?.abort();
-    const lessonBoard = emptyBoard(9);
+    const lessonBoard = emptyBoard(selectedCourse.boardSize);
     lesson.initialStones.forEach((stone) => { lessonBoard[stone.y][stone.x] = stone.color; });
     setAppMode('learn');
-    setBoardSize(9);
+    setBoardSize(selectedCourse.boardSize);
     setUserColor(lesson.player);
     setBoard(lessonBoard);
     setHistory(lesson.initialStones);
@@ -337,7 +445,7 @@ export default function Home() {
     setCapturedB(0);
     setCapturedW(0);
     setGeminiCalls(0);
-    setAiExplanation(`${lesson.title}\n${lesson.concept}\n\n${lesson.instruction}`);
+    setAiExplanation(`${selectedCourse.label} · ${lesson.title}\n${lesson.concept}\n\n${lesson.instruction}`);
     setLessonFeedback('');
     setLessonComplete(false);
     setActiveLessonId(lesson.id);
@@ -527,6 +635,8 @@ export default function Home() {
       void playStoneSound();
       if (activeLesson.player === 'B') setCapturedW((value) => value + lessonMove.capturedCount);
       else setCapturedB((value) => value + lessonMove.capturedCount);
+      const lessonKey = `${selectedCourse.id}-${activeLesson.id}`;
+      setCompletedLessonKeys((keys) => keys.includes(lessonKey) ? keys : [...keys, lessonKey]);
       setLessonComplete(true);
       setLessonFeedback('');
       setAiExplanation(`완료 · ${activeLesson.shortTitle}\n\n${activeLesson.successText}`);
@@ -650,25 +760,32 @@ export default function Home() {
         <section className="lesson-home" aria-label="바둑 기초 튜토리얼">
           <div className="lesson-home-intro">
             <p className="eyebrow">STEP BY STEP</p>
-            <h2>규칙을 알기 전에,<br />직접 한 수씩 둬보세요.</h2>
-            <p>설명을 읽고 파란 점을 한 번 누르면 다음 단계로 갑니다. 튜토리얼에서는 AI 응수나 Gemini 호출이 없습니다.</p>
-            <div className="lesson-progress"><b>0</b><span>/ {TUTORIAL_LESSONS.length + 1} 단계 완료</span></div>
+            <h2>{selectedCourse.title}</h2>
+            <p>{selectedCourse.description} 설명을 읽고 파란 점을 한 번 누르면 다음 단계로 갑니다. 튜토리얼에서는 AI 응수나 Gemini 호출이 없습니다.</p>
+            <div className="lesson-progress"><b>{completedCourseCount}</b><span>/ {selectedCourse.lessons.length} 단계 완료</span></div>
           </div>
-          <div className="lesson-grid">
-            {TUTORIAL_LESSONS.map((lesson) => (
+          <div className="course-content">
+            <div className="course-tabs" role="tablist" aria-label="튜토리얼 레벨">
+              {TUTORIAL_COURSES.map((course) => (
+                <button key={course.id} className={selectedCourse.id === course.id ? 'selected' : ''} onClick={() => setSelectedCourseId(course.id)} role="tab" aria-selected={selectedCourse.id === course.id}>{course.label}</button>
+              ))}
+            </div>
+            <div className="lesson-grid">
+            {selectedCourse.lessons.map((lesson) => (
               <button className="lesson-card" key={lesson.id} onClick={() => startLesson(lesson)}>
                 <span className="lesson-number">{String(lesson.id).padStart(2, '0')}</span>
                 <strong>{lesson.shortTitle}</strong>
                 <small>{lesson.title}</small>
-                <i>시작하기 →</i>
+                <i>{completedLessonKeys.includes(`${selectedCourse.id}-${lesson.id}`) ? '다시 연습하기 →' : '시작하기 →'}</i>
               </button>
             ))}
             <button className="lesson-card final-lesson" onClick={() => { setAppMode('play'); setBoardSize(9); setLevel('입문자'); setUserColor('B'); }}>
-              <span className="lesson-number">08</span>
-              <strong>첫 대국</strong>
-              <small>배운 규칙으로 9×9를 시작해요</small>
+              <span className="lesson-number">GO</span>
+              <strong>{selectedCourse.label} 대국</strong>
+              <small>배운 내용을 9×9 대국에서 연습해요</small>
               <i>대국 준비 →</i>
             </button>
+            </div>
           </div>
         </section>
       ) : (
@@ -677,14 +794,14 @@ export default function Home() {
       <section className="control-card" aria-label={activeLesson ? '튜토리얼 진행' : '대국 설정'}>
         {activeLesson ? (
           <div className="lesson-control" aria-live="polite">
-            <div><span className="lesson-kicker">LESSON {String(activeLesson.id).padStart(2, '0')} / {TUTORIAL_LESSONS.length}</span><h2>{activeLesson.title}</h2></div>
+            <div><span className="lesson-kicker">{selectedCourse.label} · LESSON {String(activeLesson.id).padStart(2, '0')} / {selectedCourse.lessons.length}</span><h2>{activeLesson.title}</h2></div>
             <p>{lessonComplete ? activeLesson.successText : activeLesson.instruction}</p>
             {lessonFeedback && <p className="lesson-feedback">{lessonFeedback}</p>}
             <div className="lesson-actions">
-              {lessonComplete && activeLesson.id < TUTORIAL_LESSONS.length && (
-                <button className="button primary" onClick={() => startLesson(TUTORIAL_LESSONS[activeLesson.id])}>다음 단계</button>
+              {lessonComplete && activeLesson.id < selectedCourse.lessons.length && (
+                <button className="button primary" onClick={() => startLesson(selectedCourse.lessons[activeLesson.id])}>다음 단계</button>
               )}
-              {lessonComplete && activeLesson.id === TUTORIAL_LESSONS.length && (
+              {lessonComplete && activeLesson.id === selectedCourse.lessons.length && (
                 <button className="button primary" onClick={() => { stopGame(); setAppMode('play'); setBoardSize(9); setLevel('입문자'); setUserColor('B'); }}>9 × 9 첫 대국 준비</button>
               )}
               <button className="button secondary" onClick={stopGame}>목록으로</button>

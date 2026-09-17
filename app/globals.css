@@ -90,14 +90,25 @@ h1 { margin: 0; font-size: clamp(28px, 3.8vw, 41px); line-height: 1; letter-spac
 .course-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; padding: 5px; border: 1px solid rgba(35,69,51,.1); border-radius: 15px; background: rgba(255,255,255,.5); }
 .course-tabs button { min-height: 36px; border: 0; border-radius: 10px; background: transparent; color: #68736b; font-size: 12px; font-weight: 800; cursor: pointer; }
 .course-tabs button.selected { background: #e0ecdf; color: #164d34; box-shadow: inset 0 0 0 1px rgba(40,104,70,.09); }
+.curriculum-list { display: grid; gap: 12px; }
+.curriculum-unit { padding: 13px; border: 1px solid rgba(32,67,50,.12); border-radius: 18px; background: rgba(255,255,255,.43); }
+.unit-heading { display: grid; grid-template-columns: auto 1fr auto; align-items: start; gap: 10px; margin-bottom: 11px; }
+.unit-heading > span { display: inline-grid; min-width: 51px; min-height: 24px; place-items: center; border-radius: 7px; background: #e0ecdf; color: #276048; font-size: 9px; font-weight: 850; letter-spacing: .06em; }
+.unit-heading h3 { margin: 1px 0 3px; font-size: 14px; letter-spacing: -.035em; }
+.unit-heading p { margin: 0; color: #6c756f; font-size: 11px; line-height: 1.5; }
+.unit-heading b { padding-top: 3px; color: #aa7a2d; font-size: 12px; }
 .lesson-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .lesson-card { position: relative; display: flex; min-height: 126px; flex-direction: column; align-items: flex-start; padding: 17px; border: 1px solid rgba(32,67,50,.13); border-radius: 18px; background: rgba(255,255,255,.76); color: var(--ink); text-align: left; cursor: pointer; overflow: hidden; box-shadow: 0 9px 21px rgba(25,48,36,.055); transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
 .lesson-card:hover { transform: translateY(-2px); border-color: rgba(34,106,73,.36); box-shadow: 0 13px 25px rgba(25,48,36,.1); }
+.lesson-card.locked { cursor: not-allowed; background: rgba(237,240,235,.75); color: #758078; box-shadow: none; }
+.lesson-card.locked:hover { transform: none; border-color: rgba(32,67,50,.13); box-shadow: none; }
+.lesson-card.locked::after { border-color: rgba(85,104,93,.08); }
 .lesson-number { color: #aa7a2d; font-size: 10px; font-weight: 850; letter-spacing: .12em; }
 .lesson-card strong { margin-top: 10px; font-size: 17px; letter-spacing: -.04em; }
 .lesson-card small { margin-top: 5px; color: #778078; font-size: 11px; line-height: 1.45; }
 .lesson-card i { margin-top: auto; padding-top: 11px; color: #236146; font-size: 11px; font-style: normal; font-weight: 800; }
 .lesson-card::after { position: absolute; right: -21px; bottom: -25px; width: 80px; height: 80px; border: 12px solid rgba(29,91,64,.07); border-radius: 50%; content: ""; }
+.unit-checkpoint { margin: 10px 1px 0; padding: 9px 10px; border-radius: 9px; background: rgba(239,225,192,.42); color: #745626; font-size: 11px; line-height: 1.5; }
 .final-lesson { background: linear-gradient(145deg, #f6e7c7, #f3ce89); }
 .lesson-control { display: grid; grid-template-columns: auto 1fr; column-gap: 26px; align-items: center; }
 .lesson-kicker { display: block; margin-bottom: 6px; color: #9a722f; font-size: 10px; font-weight: 850; letter-spacing: .14em; }
@@ -228,6 +239,10 @@ select:focus { border-color: #4e886c; box-shadow: 0 0 0 4px rgba(42,114,78,.11);
   .lesson-home-intro { padding: 21px; border-radius: 18px; }
   .lesson-home-intro h2 { font-size: 27px; }
   .lesson-progress { margin-top: 20px; }
+  .curriculum-unit { padding: 10px; border-radius: 15px; }
+  .unit-heading { gap: 7px; margin-bottom: 9px; }
+  .unit-heading h3 { font-size: 13px; }
+  .unit-heading p { font-size: 10px; }
   .lesson-grid { gap: 8px; }
   .course-tabs { gap: 3px; padding: 3px; border-radius: 12px; }
   .course-tabs button { min-height: 34px; padding: 0 4px; font-size: 11px; }

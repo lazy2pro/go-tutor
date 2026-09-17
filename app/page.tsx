@@ -35,6 +35,13 @@ type TutorialCourse = {
   description: string;
   boardSize: 9 | 13 | 19;
   lessons: TutorialLesson[];
+  units: CurriculumUnit[];
+};
+type CurriculumUnit = {
+  title: string;
+  goal: string;
+  lessonIds: number[];
+  checkpoint: string;
 };
 
 const emptyBoard = (size: number): Stone[][] =>
@@ -165,10 +172,35 @@ const ADVANCED_LESSONS: TutorialLesson[] = [
 ];
 
 const TUTORIAL_COURSES: TutorialCourse[] = [
-  { id: 'beginner', label: '입문', title: '바둑의 규칙부터 시작하기', description: '돌 놓기와 활로, 따내기처럼 반드시 알아야 할 기본 규칙을 배웁니다.', boardSize: 9, lessons: BEGINNER_LESSONS },
-  { id: 'elementary', label: '초급', title: '돌을 살리고 넓히기', description: '단수, 모서리, 한 칸 뜀처럼 처음 대국에서 바로 쓰는 모양을 익힙니다.', boardSize: 9, lessons: ELEMENTARY_LESSONS },
-  { id: 'intermediate', label: '중급', title: '싸움과 끝내기의 균형', description: '끊기, 선수, 사활의 기초와 끝내기 판단을 문제로 연습합니다.', boardSize: 9, lessons: INTERMEDIATE_LESSONS },
-  { id: 'advanced', label: '고급', title: '전체 판을 읽는 연습', description: '수상전, 패, 수의 방향과 형세 판단을 단계적으로 확인합니다.', boardSize: 9, lessons: ADVANCED_LESSONS },
+  {
+    id: 'beginner', label: '입문', title: '9×9 첫 대국을 위한 기초 코스', description: '한 문제씩 건너뛰는 목록이 아니라, 규칙부터 첫 대국까지 이어지는 필수 코스입니다.', boardSize: 9, lessons: BEGINNER_LESSONS,
+    units: [
+      { title: '1단원 · 돌의 생명', goal: '교차점·활로·따내기를 직접 해 봅니다.', lessonIds: [1, 2, 3], checkpoint: '상대 돌의 마지막 활로를 찾아 따낼 수 있나요?' },
+      { title: '2단원 · 내 돌 살리기', goal: '연결과 단수 탈출로 내 돌을 안전하게 만듭니다.', lessonIds: [4, 5], checkpoint: '공격하기 전, 내 돌의 활로부터 확인할 수 있나요?' },
+      { title: '3단원 · 바둑의 목표', goal: '집과 패 규칙을 알고 9×9 한 판을 시작합니다.', lessonIds: [6, 7], checkpoint: '돌을 많이 잡는 것보다 안전한 집을 만드는 이유를 설명할 수 있나요?' },
+    ],
+  },
+  {
+    id: 'elementary', label: '초급', title: '첫 승리를 위한 9×9 실전 코스', description: '상대를 급히 잡으려 하지 않고, 내 돌을 살리며 모서리부터 넓히는 훈련입니다.', boardSize: 9, lessons: ELEMENTARY_LESSONS,
+    units: [
+      { title: '1단원 · 위험을 읽기', goal: '단수와 약한 돌을 먼저 발견합니다.', lessonIds: [1, 4], checkpoint: '한 수를 두기 전에 양쪽 돌의 활로를 셀 수 있나요?' },
+      { title: '2단원 · 넓고 안전하게', goal: '모서리와 한 칸 뜀으로 안정적으로 확장합니다.', lessonIds: [2, 3], checkpoint: '돌을 붙이기보다 넓게 둘 자리를 찾을 수 있나요?' },
+    ],
+  },
+  {
+    id: 'intermediate', label: '중급', title: '싸움과 끝내기를 잇는 코스', description: '돌의 강약을 보고 끊기·사활·선수·끝내기를 순서대로 연습합니다.', boardSize: 9, lessons: INTERMEDIATE_LESSONS,
+    units: [
+      { title: '1단원 · 싸움의 기본', goal: '끊기와 두 눈의 의미를 구분합니다.', lessonIds: [1, 2], checkpoint: '상대의 연결과 내 돌의 삶 중 무엇이 급한지 판단할 수 있나요?' },
+      { title: '2단원 · 주도권과 점수', goal: '선수와 끝내기의 가치를 비교합니다.', lessonIds: [3, 4], checkpoint: '지금 당장 답해야 하는 수와 큰 곳을 구분할 수 있나요?' },
+    ],
+  },
+  {
+    id: 'advanced', label: '고급', title: '전체 판을 읽는 심화 코스', description: '정답 암기가 아니라 활로 계산, 패의 가치, 수의 방향과 전체 형세를 연결합니다.', boardSize: 9, lessons: ADVANCED_LESSONS,
+    units: [
+      { title: '1단원 · 계산과 패', goal: '싸움에서 활로 수와 패의 대가를 먼저 봅니다.', lessonIds: [1, 2], checkpoint: '패를 시작하기 전에 대가가 충분한지 설명할 수 있나요?' },
+      { title: '2단원 · 전체 판의 방향', goal: '강한 돌이 아니라 약한 돌과 큰 곳을 향합니다.', lessonIds: [3, 4], checkpoint: '국지전보다 큰 곳이 우선인 순간을 찾을 수 있나요?' },
+    ],
+  },
 ];
 
 export default function Home() {
@@ -206,7 +238,19 @@ export default function Home() {
     () => selectedCourse.lessons.find((lesson) => lesson.id === activeLessonId) ?? null,
     [activeLessonId, selectedCourse],
   );
+  const courseLessonSequence = selectedCourse.units.flatMap((unit) => unit.lessonIds)
+    .map((id) => selectedCourse.lessons.find((lesson) => lesson.id === id))
+    .filter((lesson): lesson is TutorialLesson => Boolean(lesson));
   const completedCourseCount = completedLessonKeys.filter((key) => key.startsWith(`${selectedCourseId}-`)).length;
+  const nextLesson = courseLessonSequence.find(
+    (lesson) => !completedLessonKeys.includes(`${selectedCourse.id}-${lesson.id}`),
+  ) ?? null;
+  const isLessonUnlocked = (lesson: TutorialLesson) => {
+    const lessonIndex = courseLessonSequence.findIndex((item) => item.id === lesson.id);
+    if (lessonIndex <= 0) return true;
+    const previous = courseLessonSequence[lessonIndex - 1];
+    return completedLessonKeys.includes(`${selectedCourse.id}-${previous.id}`);
+  };
 
   useEffect(() => {
     try {
@@ -398,7 +442,7 @@ export default function Home() {
     return { newBoard: nextBoard, capturedCount };
   }, [boardSize, getGroupAndLiberties]);
 
-  const getValidMoves = useCallback((grid: Stone[][], color: Color, positions: string[]) => {
+  const getValidMoves = useCallback((grid: Stone[][], color: Color, positions: string[], difficulty = level) => {
     const valid: Array<Point & { score: number }> = [];
     const stoneCount = grid.flat().filter(Boolean).length;
     for (let y = 0; y < boardSize; y++) {
@@ -416,13 +460,22 @@ export default function Home() {
           if (stone !== color && distance === 1) adjacentOpponent += 1;
         }));
         const openingSpread = stoneCount < 10 ? Math.min(nearestStone, 5) * 2 : 0;
-        const score = move.capturedCount * 100 + liberties * 4 + adjacentOpponent * 6
+        const standardScore = move.capturedCount * 100 + liberties * 4 + adjacentOpponent * 6
           + Math.min(edgeDistance, 3) * 1.5 + openingSpread + Math.random() * 2;
+        // 입문 연습 AI는 따내기와 접촉전을 의도적으로 피하고, 넓고 안전한 자리를 우선한다.
+        // 따라서 강한 엔진처럼 사용자의 돌을 바로 공격하지 않는다.
+        const beginnerScore = Math.min(liberties, 5) * 5
+          + Math.min(edgeDistance, 2) * 3
+          + openingSpread * 1.8
+          - move.capturedCount * 180
+          - adjacentOpponent * 7
+          + Math.random() * 18;
+        const score = difficulty === '입문자' ? beginnerScore : standardScore;
         valid.push({ x, y, score });
       }
     }
     return valid.sort((a, b) => b.score - a.score);
-  }, [boardSize, getGroupAndLiberties, playMove]);
+  }, [boardSize, getGroupAndLiberties, level, playMove]);
 
   const generateSgf = useCallback((moves = history) => {
     const nodes = moves
@@ -467,7 +520,9 @@ export default function Home() {
     setActiveLessonId(null);
     setLessonComplete(false);
     setLessonFeedback('');
-    setAiExplanation('바둑판의 교차점을 눌러 착수하세요. AI는 응수와 네 가지 짧은 강평을 함께 제공합니다.');
+    setAiExplanation(level === '입문자'
+      ? '입문 연습 대국입니다. AI는 Gemini를 사용하지 않고, 따내기와 강한 공격을 피하며 둡니다.'
+      : '바둑판의 교차점을 눌러 착수하세요. AI는 응수와 네 가지 짧은 강평을 함께 제공합니다.');
     setIsAiThinking(false);
     setGameStarted(true);
   };
@@ -505,13 +560,17 @@ export default function Home() {
     aiColor: Color,
     message: string,
   ) => {
-    const fallback = getValidMoves(grid, aiColor, positions)[0];
+    const candidates = getValidMoves(grid, aiColor, positions, level);
+    // 입문자는 상위 후보 중 하나를 무작위로 선택해 예측 가능한 최선수를 피한다.
+    const fallback = level === '입문자'
+      ? candidates[Math.floor(Math.random() * Math.min(8, candidates.length))]
+      : candidates[0];
     if (!fallback || !applyAiMove(grid, moves, positions, aiColor, fallback)) return false;
     setAiExplanation(
-      `${message}\n규칙 엔진 응수 · ${coordinateName(fallback.x, fallback.y, boardSize)}\n이 수는 Gemini 분석이 아닌 합법적인 빠른 응수입니다.`
+      `${message}\n규칙 엔진 응수 · ${coordinateName(fallback.x, fallback.y, boardSize)}\n${level === '입문자' ? '입문 연습 AI는 따내기와 강한 공격을 피하면서 둡니다.' : '이 수는 Gemini 분석이 아닌 합법적인 빠른 응수입니다.'}`
     );
     return true;
-  }, [applyAiMove, boardSize, getValidMoves]);
+  }, [applyAiMove, boardSize, getValidMoves, level]);
 
   const triggerAiMove = useCallback(async (
     grid: Stone[][],
@@ -591,11 +650,15 @@ export default function Home() {
   useEffect(() => {
     if (gameStarted && !activeLesson && userColor === 'W' && history.length === 0 && board.length === boardSize && !isAiThinking) {
       const timer = window.setTimeout(() => {
-        void triggerAiMove(board, history, positionHistory, '');
+        if (level === '입문자') {
+          playLocalAiMove(board, history, positionHistory, 'B', '입문 연습 AI가 첫 수를 두었습니다.');
+        } else {
+          void triggerAiMove(board, history, positionHistory, '');
+        }
       }, 0);
       return () => window.clearTimeout(timer);
     }
-  }, [activeLesson, board, boardSize, gameStarted, history, isAiThinking, positionHistory, triggerAiMove, userColor]);
+  }, [activeLesson, board, boardSize, gameStarted, history, isAiThinking, level, playLocalAiMove, positionHistory, triggerAiMove, userColor]);
 
   useEffect(() => () => {
     aiRequestRef.current?.abort();
@@ -657,9 +720,9 @@ export default function Home() {
     if (userColor === 'B') setCapturedW((value) => value + move.capturedCount);
     else setCapturedB((value) => value + move.capturedCount);
     const userMoveCount = nextHistory.filter((playedMove) => playedMove.color === userColor).length;
-    const shouldUseGemini = analysisInterval === 1 || (userColor === 'B'
+    const shouldUseGemini = level !== '입문자' && (analysisInterval === 1 || (userColor === 'B'
       ? (userMoveCount - 1) % analysisInterval === 0
-      : userMoveCount % analysisInterval === 0);
+      : userMoveCount % analysisInterval === 0));
     if (shouldUseGemini) {
       void triggerAiMove(move.newBoard, nextHistory, nextPositions, coordinateName(x, y, boardSize));
     } else {
@@ -669,7 +732,9 @@ export default function Home() {
         nextHistory,
         nextPositions,
         aiColor,
-        `Gemini 사용량 절약을 위해 ${analysisInterval}수 간격으로 분석합니다.`,
+        level === '입문자'
+          ? '입문 연습 AI가 다음 수를 두었습니다.'
+          : `Gemini 사용량 절약을 위해 ${analysisInterval}수 간격으로 분석합니다.`,
       )) {
         setAiExplanation('규칙 엔진이 둘 수 있는 합법적인 착수점을 찾지 못했습니다.');
       }
@@ -761,8 +826,8 @@ export default function Home() {
           <div className="lesson-home-intro">
             <p className="eyebrow">STEP BY STEP</p>
             <h2>{selectedCourse.title}</h2>
-            <p>{selectedCourse.description} 설명을 읽고 파란 점을 한 번 누르면 다음 단계로 갑니다. 튜토리얼에서는 AI 응수나 Gemini 호출이 없습니다.</p>
-            <div className="lesson-progress"><b>{completedCourseCount}</b><span>/ {selectedCourse.lessons.length} 단계 완료</span></div>
+            <p>{selectedCourse.description} 각 단계는 앞 수업을 마친 뒤 열리며, 마지막에는 같은 난이도의 실전으로 이어집니다. 튜토리얼에서는 AI 응수나 Gemini 호출이 없습니다.</p>
+            <div className="lesson-progress"><b>{completedCourseCount}</b><span>/ {selectedCourse.lessons.length} 수업 완료</span></div>
           </div>
           <div className="course-content">
             <div className="course-tabs" role="tablist" aria-label="튜토리얼 레벨">
@@ -770,21 +835,33 @@ export default function Home() {
                 <button key={course.id} className={selectedCourse.id === course.id ? 'selected' : ''} onClick={() => setSelectedCourseId(course.id)} role="tab" aria-selected={selectedCourse.id === course.id}>{course.label}</button>
               ))}
             </div>
-            <div className="lesson-grid">
-            {selectedCourse.lessons.map((lesson) => (
-              <button className="lesson-card" key={lesson.id} onClick={() => startLesson(lesson)}>
-                <span className="lesson-number">{String(lesson.id).padStart(2, '0')}</span>
-                <strong>{lesson.shortTitle}</strong>
-                <small>{lesson.title}</small>
-                <i>{completedLessonKeys.includes(`${selectedCourse.id}-${lesson.id}`) ? '다시 연습하기 →' : '시작하기 →'}</i>
+            <div className="curriculum-list">
+              {selectedCourse.units.map((unit, unitIndex) => {
+                const unitLessons = unit.lessonIds.map((id) => selectedCourse.lessons.find((lesson) => lesson.id === id)).filter((lesson): lesson is TutorialLesson => Boolean(lesson));
+                const done = unitLessons.filter((lesson) => completedLessonKeys.includes(`${selectedCourse.id}-${lesson.id}`)).length;
+                return <section className="curriculum-unit" key={unit.title}>
+                  <div className="unit-heading"><span>UNIT {String(unitIndex + 1).padStart(2, '0')}</span><div><h3>{unit.title}</h3><p>{unit.goal}</p></div><b>{done}/{unitLessons.length}</b></div>
+                  <div className="lesson-grid">
+                    {unitLessons.map((lesson) => {
+                      const complete = completedLessonKeys.includes(`${selectedCourse.id}-${lesson.id}`);
+                      const unlocked = isLessonUnlocked(lesson);
+                      return <button className={`lesson-card ${!unlocked ? 'locked' : ''}`} key={lesson.id} disabled={!unlocked} onClick={() => startLesson(lesson)}>
+                        <span className="lesson-number">{String(lesson.id).padStart(2, '0')} · {complete ? '완료' : unlocked ? '수업' : '잠김'}</span>
+                        <strong>{lesson.shortTitle}</strong>
+                        <small>{lesson.title}</small>
+                        <i>{complete ? '다시 연습하기 →' : unlocked ? '이 수업 시작 →' : '앞 수업을 마치면 열려요'}</i>
+                      </button>;
+                    })}
+                  </div>
+                  <p className="unit-checkpoint">확인: {unit.checkpoint}</p>
+                </section>;
+              })}
+              <button className={`lesson-card final-lesson ${nextLesson ? 'locked' : ''}`} disabled={Boolean(nextLesson)} onClick={() => { setAppMode('play'); setBoardSize(9); setLevel('입문자'); setUserColor('B'); }}>
+                <span className="lesson-number">PRACTICE GAME</span>
+                <strong>{selectedCourse.label} 실전 연습</strong>
+                <small>{nextLesson ? `다음 수업 “${nextLesson.shortTitle}”을 마치면 열립니다.` : '입문 AI와 9×9 한 판을 끝까지 두고, 배운 내용을 확인해요.'}</small>
+                <i>{nextLesson ? '수업 진행 중' : '실전 시작 →'}</i>
               </button>
-            ))}
-            <button className="lesson-card final-lesson" onClick={() => { setAppMode('play'); setBoardSize(9); setLevel('입문자'); setUserColor('B'); }}>
-              <span className="lesson-number">GO</span>
-              <strong>{selectedCourse.label} 대국</strong>
-              <small>배운 내용을 9×9 대국에서 연습해요</small>
-              <i>대국 준비 →</i>
-            </button>
             </div>
           </div>
         </section>
@@ -798,10 +875,13 @@ export default function Home() {
             <p>{lessonComplete ? activeLesson.successText : activeLesson.instruction}</p>
             {lessonFeedback && <p className="lesson-feedback">{lessonFeedback}</p>}
             <div className="lesson-actions">
-              {lessonComplete && activeLesson.id < selectedCourse.lessons.length && (
-                <button className="button primary" onClick={() => startLesson(selectedCourse.lessons[activeLesson.id])}>다음 단계</button>
+              {lessonComplete && courseLessonSequence.findIndex((lesson) => lesson.id === activeLesson.id) < courseLessonSequence.length - 1 && (
+                <button className="button primary" onClick={() => {
+                  const nextIndex = courseLessonSequence.findIndex((lesson) => lesson.id === activeLesson.id) + 1;
+                  startLesson(courseLessonSequence[nextIndex]);
+                }}>다음 수업</button>
               )}
-              {lessonComplete && activeLesson.id === selectedCourse.lessons.length && (
+              {lessonComplete && courseLessonSequence.findIndex((lesson) => lesson.id === activeLesson.id) === courseLessonSequence.length - 1 && (
                 <button className="button primary" onClick={() => { stopGame(); setAppMode('play'); setBoardSize(9); setLevel('입문자'); setUserColor('B'); }}>9 × 9 첫 대국 준비</button>
               )}
               <button className="button secondary" onClick={stopGame}>목록으로</button>
@@ -863,7 +943,7 @@ export default function Home() {
               <strong>{isUserTurn ? '당신의 차례' : isAiThinking ? 'AI가 수를 읽는 중…' : 'AI 응수 완료'}</strong>
               {lastMove && <span>마지막 착수 · {lastMove.color === 'B' ? '흑' : '백'} {coordinateName(lastMove.x, lastMove.y, boardSize)}</span>}
               <span>흑 따냄 {capturedW} · 백 따냄 {capturedB}</span>
-              <span>이번 대국 Gemini 호출 {geminiCalls}회</span>
+              <span>{level === '입문자' ? '입문 연습 AI · Gemini 미사용' : `이번 대국 Gemini 호출 ${geminiCalls}회`}</span>
             </div>
           </div>
         )}

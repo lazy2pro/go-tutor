@@ -215,6 +215,10 @@ export default function Home() {
   const [analysisInterval, setAnalysisInterval] = useState<1 | 2 | 3>(2);
   const [userColor, setUserColor] = useState<Color>('B');
   const [gameStarted, setGameStarted] = useState(false);
+  const [currentTurn, setCurrentTurn] = useState<Color>('B');
+  const [passStreak, setPassStreak] = useState(0);
+  const [gameOver, setGameOver] = useState(false);
+  const [gameEndMessage, setGameEndMessage] = useState('');
   const [board, setBoard] = useState<Stone[][]>([]);
   const [history, setHistory] = useState<Move[]>([]);
   const [positionHistory, setPositionHistory] = useState<string[]>([]);
@@ -498,6 +502,10 @@ export default function Home() {
     setCapturedB(0);
     setCapturedW(0);
     setGeminiCalls(0);
+    setCurrentTurn('B');
+    setPassStreak(0);
+    setGameOver(false);
+    setGameEndMessage('');
     setAiExplanation(`${selectedCourse.label} · ${lesson.title}\n${lesson.concept}\n\n${lesson.instruction}`);
     setLessonFeedback('');
     setLessonComplete(false);
@@ -516,6 +524,10 @@ export default function Home() {
     setCapturedB(0);
     setCapturedW(0);
     setGeminiCalls(0);
+    setCurrentTurn('B');
+    setPassStreak(0);
+    setGameOver(false);
+    setGameEndMessage('');
     setAppMode('play');
     setActiveLessonId(null);
     setLessonComplete(false);
@@ -531,9 +543,21 @@ export default function Home() {
     aiRequestRef.current?.abort();
     setIsAiThinking(false);
     setGameStarted(false);
+    setGameOver(false);
+    setGameEndMessage('');
     setActiveLessonId(null);
     setLessonComplete(false);
   };
+
+  const finishGame = useCallback((message: string) => {
+    aiRequestRef.current?.abort();
+    setIsAiThinking(false);
+    setGameStarted(false);
+    setGameOver(true);
+    setGameEndMessage(message);
+    setHoverPoint(null);
+    setAiExplanation(`${message}\n\n현재 앱은 집 계산을 구현하지 않아 승패를 추정하지 않습니다. 기보를 저장해 복기할 수 있습니다.`);
+  }, []);
 
   const applyAiMove = useCallback((
     grid: Stone[][],
@@ -547,11 +571,24 @@ export default function Home() {
     setBoard(move.newBoard);
     setHistory([...moves, { ...point, color: aiColor }]);
     setPositionHistory([...positions, serializeBoard(move.newBoard)]);
+    setCurrentTurn(aiColor === 'B' ? 'W' : 'B');
+    setPassStreak(0);
     void playStoneSound();
     if (aiColor === 'B') setCapturedW((value) => value + move.capturedCount);
     else setCapturedB((value) => value + move.capturedCount);
     return true;
   }, [playMove, playStoneSound]);
+
+  const handleAiPass = useCallback((grid: Stone[][], aiColor: Color, message: string) => {
+    const userMoves = getValidMoves(grid, aiColor === 'B' ? 'W' : 'B', positionHistory, level);
+    if (passStreak >= 1 || userMoves.length === 0) {
+      finishGame('종국 · 양쪽 모두 둘 수 있는 합법적인 수가 없어 대국을 종료했습니다.');
+      return;
+    }
+    setCurrentTurn(aiColor === 'B' ? 'W' : 'B');
+    setPassStreak(1);
+    setAiExplanation(`${message}\nAI가 둘 수 있는 합법적인 착수점이 없어 패스했습니다. 당신의 차례입니다.`);
+  }, [finishGame, getValidMoves, level, passStreak, positionHistory]);
 
   const playLocalAiMove = useCallback((
     grid: Stone[][],
@@ -565,12 +602,16 @@ export default function Home() {
     const fallback = level === '입문자'
       ? candidates[Math.floor(Math.random() * Math.min(8, candidates.length))]
       : candidates[0];
-    if (!fallback || !applyAiMove(grid, moves, positions, aiColor, fallback)) return false;
+    if (!fallback) {
+      handleAiPass(grid, aiColor, message);
+      return true;
+    }
+    if (!applyAiMove(grid, moves, positions, aiColor, fallback)) return false;
     setAiExplanation(
       `${message}\n규칙 엔진 응수 · ${coordinateName(fallback.x, fallback.y, boardSize)}\n${level === '입문자' ? '입문 연습 AI는 따내기와 강한 공격을 피하면서 둡니다.' : '이 수는 Gemini 분석이 아닌 합법적인 빠른 응수입니다.'}`
     );
     return true;
-  }, [applyAiMove, boardSize, getValidMoves, level]);
+  }, [applyAiMove, boardSize, getValidMoves, handleAiPass, level]);
 
   const triggerAiMove = useCallback(async (
     grid: Stone[][],
@@ -607,7 +648,10 @@ export default function Home() {
 
       if (!played) {
         const fallback = getValidMoves(grid, aiColor, positions)[0];
-        if (!fallback) throw new Error('AI가 둘 수 있는 합법적인 착수점이 없습니다.');
+        if (!fallback) {
+          handleAiPass(grid, aiColor, 'AI가 둘 수 있는 합법적인 착수점을 찾지 못했습니다.');
+          return;
+        }
         played = applyAiMove(grid, moves, positions, aiColor, fallback);
         result.move = coordinateName(fallback.x, fallback.y, boardSize);
         result.reason = `AI가 제안한 좌표가 둘 수 없어 규칙 엔진이 ${result.move}(으)로 교정했습니다.`;
@@ -645,10 +689,10 @@ export default function Home() {
         setIsAiThinking(false);
       }
     }
-  }, [applyAiMove, boardSize, generateSgf, getValidMoves, level, playLocalAiMove, userColor]);
+  }, [applyAiMove, boardSize, generateSgf, getValidMoves, handleAiPass, level, playLocalAiMove, userColor]);
 
   useEffect(() => {
-    if (gameStarted && !activeLesson && userColor === 'W' && history.length === 0 && board.length === boardSize && !isAiThinking) {
+    if (gameStarted && !activeLesson && userColor === 'W' && currentTurn === 'B' && history.length === 0 && board.length === boardSize && !isAiThinking) {
       const timer = window.setTimeout(() => {
         if (level === '입문자') {
           playLocalAiMove(board, history, positionHistory, 'B', '입문 연습 AI가 첫 수를 두었습니다.');
@@ -658,7 +702,7 @@ export default function Home() {
       }, 0);
       return () => window.clearTimeout(timer);
     }
-  }, [activeLesson, board, boardSize, gameStarted, history, isAiThinking, level, playLocalAiMove, positionHistory, triggerAiMove, userColor]);
+  }, [activeLesson, board, boardSize, currentTurn, gameStarted, history, isAiThinking, level, playLocalAiMove, positionHistory, triggerAiMove, userColor]);
 
   useEffect(() => () => {
     aiRequestRef.current?.abort();
@@ -668,7 +712,6 @@ export default function Home() {
   const handleBoardPointer = (event: React.PointerEvent<SVGSVGElement>) => {
     if (!gameStarted || isAiThinking) return;
     if (!activeLesson) {
-      const currentTurn: Color = history.length % 2 === 0 ? 'B' : 'W';
       if (currentTurn !== userColor) return;
     }
 
@@ -716,6 +759,8 @@ export default function Home() {
     setBoard(move.newBoard);
     setHistory(nextHistory);
     setPositionHistory(nextPositions);
+    setCurrentTurn(userColor === 'B' ? 'W' : 'B');
+    setPassStreak(0);
     void playStoneSound();
     if (userColor === 'B') setCapturedW((value) => value + move.capturedCount);
     else setCapturedB((value) => value + move.capturedCount);
@@ -738,6 +783,23 @@ export default function Home() {
       )) {
         setAiExplanation('규칙 엔진이 둘 수 있는 합법적인 착수점을 찾지 못했습니다.');
       }
+    }
+  };
+
+  const passTurn = () => {
+    if (!gameStarted || activeLesson || !isUserTurn) return;
+    const aiColor: Color = userColor === 'B' ? 'W' : 'B';
+    if (getValidMoves(board, aiColor, positionHistory, level).length === 0) {
+      finishGame('종국 · 당신과 AI가 연속으로 패스해 대국을 종료했습니다.');
+      return;
+    }
+    setCurrentTurn(aiColor);
+    setPassStreak(1);
+    setAiExplanation('당신이 패스했습니다. AI의 응수를 확인합니다.');
+    if (level === '입문자') {
+      playLocalAiMove(board, history, positionHistory, aiColor, '당신이 패스한 뒤 입문 연습 AI가 응수합니다.');
+    } else {
+      void triggerAiMove(board, history, positionHistory, '패스');
     }
   };
 
@@ -799,7 +861,7 @@ export default function Home() {
   };
 
   const isUserTurn = gameStarted && !isAiThinking &&
-    (activeLesson ? !lessonComplete : ((history.length % 2 === 0 && userColor === 'B') || (history.length % 2 === 1 && userColor === 'W')));
+    (activeLesson ? !lessonComplete : currentTurn === userColor);
   const lastMove = history.at(-1);
 
   return (
@@ -925,6 +987,7 @@ export default function Home() {
             ? <button className="button primary" onClick={startGame}>대국 시작</button>
             : <button className="button secondary" onClick={stopGame}>설정 변경 · 재시작</button>}
           {gameStarted && <button className="button save" disabled={saving || isAiThinking} onClick={saveGame}>{saving ? '저장 중…' : '기보 저장'}</button>}
+          {gameStarted && !activeLesson && <button className="button secondary" disabled={!isUserTurn} onClick={passTurn}>패스</button>}
           <button
             className="button sound"
             aria-pressed={soundEnabled}
@@ -946,6 +1009,9 @@ export default function Home() {
               <span>{level === '입문자' ? '입문 연습 AI · Gemini 미사용' : `이번 대국 Gemini 호출 ${geminiCalls}회`}</span>
             </div>
           </div>
+        )}
+        {gameOver && (
+          <div className="game-end-notice" role="status"><strong>대국 종료</strong><span>{gameEndMessage}</span><button className="button primary" onClick={startGame}>새 대국</button></div>
         )}
           </>
         )}

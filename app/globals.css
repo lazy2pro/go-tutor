@@ -164,6 +164,10 @@ select:focus { border-color: #4e886c; box-shadow: 0 0 0 4px rgba(42,114,78,.11);
 .move-counter em { margin-left: 2px; font-size: 12px; font-style: normal; }
 .status-details { display: flex; flex: 1; flex-wrap: wrap; gap: 5px 17px; font-size: 12px; }
 .status-details strong { width: 100%; color: #146542; font-size: 13px; }
+.game-end-notice { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; margin-top: 15px; padding: 14px; border: 1px solid rgba(32,103,69,.22); border-radius: 14px; background: linear-gradient(135deg, #edf6ef, #f8f0de); color: #315240; font-size: 12px; line-height: 1.55; }
+.game-end-notice strong { color: #0d5a37; font-size: 14px; }
+.game-end-notice span { flex: 1 1 260px; }
+.game-end-notice .button { min-height: 38px; padding: 0 14px; }
 
 .game-layout { display: grid; grid-template-columns: minmax(0, 680px) minmax(310px, 1fr); align-items: start; gap: 28px; }
 .board-area { min-width: 0; }
